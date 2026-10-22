@@ -177,6 +177,35 @@ mark.shl{background:#F7D560;box-shadow:0 0 0 2px #F7D560}
 .search-btn{left:auto!important;left:6.6rem!important}
 .looptag{font-size:.75rem;color:var(--slate)}
 .loopbtn{padding:.25rem .7rem}
+/* variable tooltips */
+.katex .vt{cursor:help;border-bottom:1px dotted rgba(155,28,28,.55);border-radius:1px}
+.katex .vt:hover,.katex .vt:focus{background:rgba(231,180,22,.28);outline:none}
+#vtip{position:fixed;z-index:80;max-width:280px;background:var(--ink);color:#fff;font:.8rem/1.4 var(--sans);padding:.4rem .6rem;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.25);pointer-events:none}
+#vtip b{font-family:var(--serif);font-style:italic;margin-right:.3rem;color:#F7D560}
+#vtip[hidden]{display:none}
+/* midterm */
+.side .mt-link a{background:var(--cardinal);color:#fff;font-weight:600;margin-bottom:.4rem}
+.side .mt-link a:hover{background:#7E1515}
+.side .mt-link a.on{background:#fff;color:var(--cardinal)}
+.mt-meta{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:.8rem}
+.mt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr));gap:1rem;margin-top:.6rem}
+@media (max-width:560px){.mt-grid{grid-template-columns:minmax(0,1fr)}}
+.mt-card{min-width:0}
+.mt-card{background:var(--sheet);border:1px solid var(--rule);border-top:3px solid var(--cardinal);border-radius:8px;padding:.8rem 1rem;font-family:var(--sans);font-size:.88rem;line-height:1.45;break-inside:avoid}
+.mt-card header{display:flex;align-items:baseline;gap:.5rem;margin-bottom:.3rem}
+.mt-card h3{font-family:var(--serif);font-size:1.12rem;margin:0}.mt-card h3 a{color:var(--ink);text-decoration:none}.mt-card h3 a:hover{color:var(--cardinal)}
+.mt-n{font-weight:700;color:var(--cardinal);font-size:.8rem}
+.mt-auto{font-size:.7rem;background:#FBF5E1;color:#8A6A00;border-radius:4px;padding:.05rem .35rem}
+.mt-card p{margin:.3rem 0}.mt-gist{font-family:var(--serif);font-size:.98rem}
+.mt-f{background:var(--mist);border-radius:6px;padding:.1rem .5rem;margin:.4rem 0;overflow-x:auto;font-size:.92em}
+.mt-f .katex-display{margin:.35rem 0}
+.mt-trap{color:#7E1515}
+.mt-links a{display:inline-block;margin:.15rem .35rem 0 0;padding:.08rem .5rem;border:1px solid var(--rule);border-radius:999px;font-size:.78rem;text-decoration:none;color:var(--ink)}
+.mt-links a:hover{border-color:var(--cardinal);color:var(--cardinal)}
+.mt-dec td,.mt-dec th{font-size:.86rem}
+.mt-quiz details{border:1px solid var(--rule);border-radius:7px;background:var(--sheet);margin:.35rem 0;font-family:var(--sans);font-size:.88rem;max-width:860px}
+.mt-quiz summary{cursor:pointer;padding:.45rem .8rem}.mt-quiz details>div{padding:0 .8rem .5rem}
+@media print{.side,.menu-btn,#searchBtn,.hlbar,.spanel,.mt-meta button{display:none!important}.shell{display:block}.page{padding:0;max-width:none}.mt-grid{grid-template-columns:1fr 1fr;gap:.5rem}.mt-card{font-size:.78rem}.mt-quiz details{display:none}body{background:#fff}}
 /* homework */
 .stmt{background:var(--sheet);border:1px solid var(--rule);border-left:3px solid var(--ink);border-radius:0 8px 8px 0;padding:.4rem 1.1rem;margin:1rem 0;max-width:820px}
 details.sol,details.hint{max-width:820px;margin:.8rem 0;border:1px solid var(--rule);border-radius:8px;background:var(--sheet)}
@@ -235,6 +264,7 @@ pre.code{background:var(--ink);color:#E6EDF5;padding:1rem 1.1rem;border-radius:8
   <aside class="side" id="side">
     <a class="brand" href="#/"><b>Efficient Generative Language Models</b><span>Interactive notes for MS&amp;E 319, Stanford</span></a>
     <div class="sbox"><input id="q" type="search" placeholder="Search the notes" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sPanel" aria-autocomplete="list" aria-label="Search the notes"><kbd>/</kbd></div>
+    <nav class="util mt-link"><a href="#/midterm" data-r="midterm">Midterm review</a></nav>
     <div id="sideNav"></div>
     <h4>Assignments</h4>
     <nav id="hwNav"></nav>
@@ -265,7 +295,6 @@ const COURSE = {
   roadmap: [
     {part:'I',  title:'Multi-token prediction', note:'Supervise several future positions; is the gain worth the compute?'},
     {part:'II', title:'FlashAttention', note:'Dense attention with less memory traffic (linear attention is covered in Lecture 7).'},
-    {part:'III',title:'Speculative decoding', note:'Draft model proposes, target verifies in parallel, distribution unchanged.'},
     {part:'III',title:'Learned cache compression', note:'Train a compact representation of a reusable corpus.'},
     {part:'IV', title:'Supervised fine-tuning and LoRA', note:'Curated examples; low-rank trainable updates.'},
     {part:'IV', title:'Learning from preferences', note:'Reward models and policy optimisation, or direct preference training.'},
@@ -393,7 +422,7 @@ const COMPONENTS = {
   attn: {name:'Attention', color:'#0F766E', text:'The only step where tokens exchange information. Its cost grows with context length, and its cache dominates decoding memory. Position enters here too (RoPE, ALiBi), and recurrent layers replace it with a fixed-size state.', lectures:['l2','l5','l6','l7','l8','l9']},
   mlp:  {name:'MLP', color:'#B45309', text:'Acts on each token separately and holds most of the weights. A mixture of experts replaces it with many MLPs and a router; quantization stores its weights in fewer bits.', lectures:['l2','l4','l9']},
   resid:{name:'Residual stream', color:'#1B2433', text:'Each sublayer adds an update; information and gradients can bypass every sublayer.', lectures:['l2']},
-  head: {name:'Vocabulary projection and softmax', color:'#64748B', text:'The last position’s vector becomes scores over the vocabulary, then probabilities.', lectures:['l2']},
+  head: {name:'Vocabulary projection and softmax', color:'#64748B', text:'The last position’s vector becomes scores over the vocabulary, then probabilities. Speculative decoding samples from these probabilities exactly while checking several drafted tokens per pass.', lectures:['l2','l10']},
   optim:{name:'Training: loss, gradients, optimizer', color:'#9B1C1C', text:'Next-token log loss, backpropagation, then an update rule: SGD, Adam, Muon.', lectures:['l2','l3']},
   scale:{name:'Scale: parameters N, tokens D', color:'#9B1C1C', text:'Training compute C ≈ 6ND. Scaling laws decide how to split it.', lectures:['l1','l2']}
 };
@@ -502,6 +531,7 @@ function renderHome(app){
 }
 
 function renderLecture(app, L, sectionId){
+  app.dataset.lec=L.id;
   const idx = COURSE.lectures.indexOf(L), prev = COURSE.lectures[idx-1], next = COURSE.lectures[idx+1];
   app.innerHTML = `
     <header class="lhead">
@@ -525,6 +555,7 @@ function renderLecture(app, L, sectionId){
 function hwFor(lid){ const out=[]; COURSE.assignments.forEach(A=>A.problems.forEach(P=>{ if((P.lectures||[]).includes(lid)) out.push({A,P}); })); return out; }
 
 function renderHW(app, A, pid){
+  app.dataset.lec=A.id;
   app.innerHTML = `<header class="lhead"><div class="num">Homework ${A.number}</div><h1>${A.title}</h1>
     <p class="lede" style="margin-top:1rem">${A.summary}</p></header>
     <ul class="toc">${A.problems.map(P=>`<li><a href="#/hw/${A.id}/${P.id}">${P.title}</a></li>`).join('')}</ul>
@@ -579,6 +610,8 @@ function renderAdd(app){
     <li>Write section bodies as HTML inside <code>String.raw\`…\`</code> so LaTeX backslashes survive. Use <code>$$…$$</code> for display math and <code>\\(…\\)</code> inline.</li>
     <li>To add an interactive element, put <code>&lt;div data-widget="my-widget" data-opts='{"k":1}'&gt;&lt;/div&gt;</code> in a body, then define <code>widget('my-widget', (el, opts) =&gt; { … })</code> in the widgets block. Use the shared helpers <code>box</code>, <code>slider</code>, <code>seg</code> and <code>chart</code>.</li>
     <li>Delete the topic’s line from <code>COURSE.roadmap</code> so it stops appearing as upcoming.</li>
+    <li>Add a midterm card with <code>addReview('l11', {gist, use, how, formulas, trap, decide, links})</code> in the review block. Until you do, the Midterm review page shows an automatic summary built from <code>keyIdeas</code>, flagged “auto summary”.</li>
+    <li>Add hover definitions for the lecture’s symbols with <code>addGlossary('l11', {N:'number of parameters', 'hat x':'reconstruction', q_t:'query at position t'}, {sectionId:{L:'loss'}})</code> in the glossary block. Keys are the symbol, optionally with its subscript (<code>q_t</code>) or accent (<code>hat x</code>, <code>tilde w</code>, <code>cal L</code>); section entries override lecture entries.</li>
     <li>Nothing else: the site-wide search indexes every registered lecture, section, interactive element (by the title passed to <code>box()</code>), quiz question and homework problem when the page loads.</li>
   </ol>
   <h2>Template</h2>
@@ -610,7 +643,7 @@ function parseRoute(){
 }
 let lastLecture=null;
 function route(){
-  const r = parseRoute(), app=$('#app');
+  const r = parseRoute(), app=$('#app'); delete app.dataset.lec;
   renderNav(r);
   $('#side').classList.remove('open'); $('#menuBtn').setAttribute('aria-expanded','false');
   if (r.page==='lecture'){
@@ -803,6 +836,48 @@ document.addEventListener('DOMContentLoaded',()=>{
 </script>
 <script>
 /* =====================================================================
+   MIDTERM REVIEW PAGE (#/midterm) — rendered from COURSE.lectures,
+   so it updates itself whenever a lecture is registered.
+   ===================================================================== */
+function autoReview(L){ return {auto:true, gist:L.oneLine||L.summary, use:'', how:(L.keyIdeas||[]).slice(0,3).join(' '), formulas:'', trap:'', decide:[], links:L.sections.slice(0,4).map(sx=>[sx.title,sx.id])}; }
+function renderMidterm(app){
+  const Ls=COURSE.lectures; const last=Ls[Ls.length-1];
+  const missing=Ls.filter(L=>!L.review).map(L=>L.number);
+  const card=L=>{ const r=L.review||autoReview(L); const a=id=>`#/lecture/${L.id}/${id}`;
+    return `<article class="mt-card" id="mt-${L.id}">
+      <header><span class="mt-n">L${L.number}</span><h3><a href="#/lecture/${L.id}">${L.short||L.title}</a></h3>${r.auto?'<span class="mt-auto" title="No review written yet; summarised from the lecture’s key ideas">auto summary</span>':''}</header>
+      <p class="mt-gist">${r.gist}</p>
+      ${r.use?`<p><b>Use when:</b> ${r.use}</p>`:''}
+      ${r.how?`<p><b>How:</b> ${r.how}</p>`:''}
+      ${r.formulas?`<div class="mt-f">${r.formulas}</div>`:''}
+      ${r.trap?`<p class="mt-trap"><b>Trap:</b> ${r.trap}</p>`:''}
+      <p class="mt-links">${(r.links||[]).map(([t,id])=>`<a href="${a(id)}">${t}</a>`).join('')}</p></article>`; };
+  const rows=Ls.flatMap(L=>((L.review||{}).decide||[]).map(d=>({L,d})));
+  app.innerHTML=`
+    <header class="lhead"><div class="num">Exam prep</div><h1>Midterm review</h1>
+      <p class="lede" style="margin-top:.8rem">The minimum to know from every lecture so far (Lectures 1–${last.number}): what each idea is, when to reach for it, how it works, the formulas, and the classic trap. Each heading links to the full notes.</p>
+      <div class="mt-meta small"><span id="mtTime"></span> · built from ${Ls.length} lectures · updates automatically as lectures are added${missing.length?` · lecture${missing.length>1?'s':''} ${missing.join(', ')} ${missing.length>1?'use':'uses'} an automatic summary until a review is written`:''}
+      <button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div></header>
+    <div class="prose"><h2 style="margin-top:1.6rem">Decision guide</h2></div>
+    <div style="overflow-x:auto"><table class="t mt-dec"><thead><tr><th>If the problem is…</th><th>Reach for…</th><th>Lecture</th></tr></thead><tbody>
+      ${rows.map(({L,d})=>`<tr><td>${d[0]}</td><td>${d[1]}</td><td><a href="#/lecture/${L.id}/${d[2]}">L${L.number}</a></td></tr>`).join('')}</tbody></table></div>
+    ${COURSE.parts.map(p=>{ const ls=Ls.filter(L=>L.part===p.id); if(!ls.length) return ''; return `<section><div class="prose"><h2>Part ${p.id}: ${p.title}</h2></div><div class="mt-grid">${ls.map(card).join('')}</div></section>`; }).join('')}
+    <section><div class="prose"><h2>Ten-second self-test</h2><p class="small">One question per lecture. Answer in your head, then open it.</p></div>
+      <div class="mt-quiz">${Ls.filter(L=>L.quiz&&L.quiz.length).map(L=>{ const q=L.quiz[0]; return `<details><summary><b>L${L.number}.</b> ${q.q}</summary><div><p><b>${q.options[q.answer]}</b></p><p class="small">${q.why}</p></div></details>`; }).join('')}</div></section>
+    ${COURSE.assignments.length?`<section><div class="prose"><h2>Homework to revisit</h2><ul>${COURSE.assignments.flatMap(A=>A.problems.map(P=>`<li><a href="#/hw/${A.id}/${P.id}">HW${A.number} ${P.title.replace(/\s*\([^()]*points?[^()]*\)\s*$/,'')}</a>: ${P.blurb}</li>`)).join('')}</ul></div></section>`:''}`;
+  renderMath(app);
+  const clone=app.cloneNode(true); clone.querySelectorAll('.katex-mathml,.mt-quiz details>div,.mt-meta,button').forEach(n=>n.remove());
+  clone.querySelectorAll('.katex-html').forEach(n=>n.replaceWith(document.createTextNode(' formula '))); // a formula reads like a few words
+  const words=(clone.textContent.match(/\S+/g)||[]).length;
+  const mins=Math.round(words/200); $('#mtTime').textContent=`about ${mins} minute${mins===1?'':'s'} to read (${words.toLocaleString()} words)${mins>10?' — over the 10-minute target: tighten the longest reviews':''}`;
+  window.scrollTo(0,0); document.title='Midterm review — MS&E 319';
+}
+const _routeMt=route; route=function(){ const r=parseRoute(); if(r.page==='midterm'){ renderNav(r); $('#side').classList.remove('open'); lastLecture=null; $('#hlBar')&&($('#hlBar').hidden=true); renderMidterm($('#app')); return; } _routeMt(); };
+const _parseMt=parseRoute; parseRoute=function(){ const p=location.hash.replace(/^#\/?/,'').split('/'); if(p[0]==='midterm') return {page:'midterm'}; return _parseMt(); };
+document.addEventListener('DOMContentLoaded',()=>{ for(const L of COURSE.lectures){ const r=L.review||autoReview(L); const d={type:'Review',title:`Midterm review: Lecture ${L.number}`,crumb:'Midterm review',url:'#/midterm',text:plainText([r.gist,r.use,r.how,r.trap].join(' '))}; d.lt=d.title.toLowerCase(); d.lx=d.text.toLowerCase(); SEARCH.docs.push(d); } });
+</script>
+<script>
+/* =====================================================================
    4. LECTURES — one registerLecture({...}) per lecture.
    ===================================================================== */
 const TEMPLATE_TEXT = `/* LECTURE TEMPLATE — copy, then edit */
@@ -828,7 +903,10 @@ registerLecture({
     { q: 'Question text?', options: ['A', 'B', 'C'], answer: 1, why: 'Explanation shown after answering.' }
   ],
   sources: ['Author et al. (2026)']
-});`;
+});
+/* and, in the MIDTERM REVIEW DATA block: */
+addReview('l8', { gist:'…', use:'…', how:'…', formulas:String.raw\`$$ … $$\`, trap:'…',
+  decide:[['If the problem is…','reach for…','section-id']], links:[['Label','section-id']] });`;
 
 /* ------------------------------------------------------------------ L1 */
 registerLecture({
@@ -858,7 +936,7 @@ registerLecture({
       $$ \|x-y\|_2 \approx \|\hat x - \hat y\|_2, \qquad \langle x, y\rangle \approx \langle \hat x, \hat y\rangle $$
       <p>A few unusually large coordinates can dominate rounding error. A random rotation \(z = Rx\) preserves lengths, angles and inner products exactly but spreads the vector’s energy across coordinates, which makes coordinatewise rounding far less fragile. Try it.</p>
       <div data-widget="rotation-quant"></div>
-      <p>TurboQuant (Zandieh et al., 2025) puts this together: rotate, apply an optimised scalar quantizer per coordinate, then correct the residual with QJL. Theoretically its error decays within a small constant of the information-theoretic optimum. Experimentally it matched full-precision long-context performance at 3.5 bits per channel. <a href="#/lecture/l8">Lecture 8</a> builds all of this up step by step, and <a href="#/lecture/l9">Lecture 9</a> turns to weights and activations.</p>`},
+      <p>TurboQuant (Zandieh et al., 2025) puts this together: rotate, apply an optimised scalar quantizer per coordinate, then correct the residual with QJL. Theoretically its error decays within a small constant of the information-theoretic optimum. Experimentally it matched full-precision long-context performance at 3.5 bits per channel. <a href="#/lecture/l8">Lecture 8</a> builds all of this up step by step, and <a href="#/lecture/l9">Lecture 9</a> turns to weights and activations. Speculative decoding, the other Part III topic previewed in the outline, is <a href="#/lecture/l10">Lecture 10</a>.</p>`},
     {id:'distill', title:'Post-training: distillation', body:String.raw`
       <p>A large teacher produces training targets and a smaller student learns to imitate them, spending more compute during training to use less at inference (Hinton, Vinyals and Dean, 2015). Paradoxically, a self-distilled student with the same architecture and no new labels can generalise better than its teacher. A simple spectral model shows why: after \(t\) rounds, predictions are \(\hat y^{(t)} = S^t y\), so repeated distillation progressively damps the directions the learning operator \(S\) shrinks, acting as regularisation.</p>
       <p>Self-distillation also improves through selection: the model generates candidate answers, a verifier keeps the strongest, and the model trains on the filtered set (STaR, Zelikman et al., 2022). Selection is what turns generated answers into useful supervision.</p>`},
@@ -1641,6 +1719,365 @@ registerLecture({
     {q:'In single-token decode, which change most directly reduces time?', options:['Fewer weight bits (W4A16)','Fewer activation bits only','Larger batch'], answer:0, why:'Decode reads every weight for little arithmetic, so it is memory-bound; weight-only compression cuts the bytes read.'}
   ],
   sources:['Frantar et al. (2023), GPTQ','Babai (1986)','Chen et al. (ICLR 2026)','Lifar et al. (2026), WaterSIC','Zhang et al. (2022), OPT','Xiao et al. (2023), SmoothQuant','Lin et al. (2024), AWQ','Ashkboos et al. (2024), QuaRot','Liu et al. (2024), SpinQuant','Bengio, Léonard and Courville (2013)','Yin et al. (2019)','Equitz and Cover (1991)','Klein (2000)','Morris et al. (ICML 2026)','Allen-Zhu and Li (ICLR 2025)','Kumar et al. (ICLR 2025)','Krauth and Mézard (1989)','Gutfreund and Stein (1990)']
+});
+</script>
+<script>
+/* ------------------------------------------------------------------ L10 */
+registerLecture({
+  id:'l10', number:10, part:'III', title:'Speculative Decoding and Efficient Inference', short:'Speculative decoding',
+  lecturer:'Amin Saberi', components:['head','attn'],
+  oneLine:'A cheap drafter guesses ahead; the target checks the whole guess in one pass and keeps its exact distribution. Then the other levers: prefix caching, batching, paged KV memory.',
+  summary:'Each decoding step reads every weight to produce one token, and the arithmetic units mostly wait. Speculative decoding uses that idle arithmetic: a cheap drafter proposes several tokens, the target checks them all in one pass, and an acceptance rule with a residual distribution makes the output follow the target exactly. The lecture ends with the other ways to make inference cheaper and how they compete.',
+  keyIdeas:[
+    'Checking K supplied tokens costs about one pass of the target, because the pass is limited by reading weights, not arithmetic.',
+    'Accept a proposal ω with probability min{1, p(ω)/q(ω)}, else draw from the residual [p − q]₊/(1 − α): the output has law p exactly.',
+    'With per-token acceptance α, a round commits 1 + α + ⋯ + α^K tokens on average; drafting cost limits the useful K.',
+    'Drafts can come from a small model, from text that already exists, from extra heads (Medusa, EAGLE, MTP), and can be trees.',
+    'Find the dominant cost first: speculation only shortens decoding, and it competes with batching for the same idle arithmetic.'
+  ],
+  sections:[
+    {id:'opportunity', title:'Part I: the computational opportunity', body:String.raw`
+      <p><b>One token per pass.</b> An 8-billion-weight model at 2 bytes per weight holds 16 GB. Each decoding step reads all of it to produce one token: at 2 TB/s that takes 8 ms, while the arithmetic, at 100 TFLOP/s, takes 0.16 ms. The arithmetic units mostly wait. Lecture 9’s quantization shortens the 8 ms bar; this lecture makes one pass produce several tokens.</p>
+      <div data-widget="weight-read"></div>
+      <h3>Sampling waits; checking does not</h3>
+      <p>Call the large model the <b>target</b>; \(p(\omega\mid\text{prefix})\) is its probability that the next token is \(\omega\in\mathcal V\). Generating is sequential: \(Y_1\sim p(\cdot\mid\text{prefix})\), then \(Y_2\sim p(\cdot\mid\text{prefix}, Y_1)\) must wait for \(Y_1\), and so on. But if the tokens A, B, C are <i>supplied</i>, one causal pass computes every conditional at once: \(p(\cdot\mid\text{prefix})\), \(p(\cdot\mid\text{prefix},A)\), \(p(\cdot\mid\text{prefix},A,B)\), \(p(\cdot\mid\text{prefix},A,B,C)\). This is the same parallelism that makes training on whole sequences possible (Lecture 2).</p>
+      <div data-widget="sample-vs-check"></div>
+      <h3>A cheap drafter guesses ahead</h3>
+      <p>A <b>drafter</b> is a cheaper predictor with next-token distribution \(q(\omega\mid\text{prefix})\); its guesses are the <b>draft</b>. After “The capital of France is”, the drafter proposes “Paris , which is”, and the target checks the whole draft in one pass.</p>
+      <p><b>Greedy decoding</b>, where the target always emits its most likely token, gives a simple rule: keep the draft up to the first mismatch, emit the target’s token there, discard the rest. If the target’s most likely tokens are “Paris , a”, the output is “Paris , a” and “which is” is discarded. The problem: greedy finds the most likely continuation but does not reproduce the target’s distribution. To sample exactly, we need a different rule.</p>
+      <div data-widget="greedy-verify"></div>`},
+    {id:'exact', title:'Part II: exact sampling from a guess', body:String.raw`
+      <p><b>A sampling puzzle.</b> The drafter proposes a token from \(q\). We may keep it or replace it, but the output must follow \(p\). Which proposals can we keep, and what fraction of each, to keep as many as possible?</p>
+      <table class="t"><thead><tr><th>Token</th><th class="r">Target p</th><th class="r">Draft q</th><th class="r">Proposed in 100</th><th class="r">Wanted in 100</th></tr></thead><tbody>
+      <tr><td>A</td><td class="r">0.60</td><td class="r">0.50</td><td class="r">50</td><td class="r">60</td></tr>
+      <tr><td>B</td><td class="r">0.30</td><td class="r">0.20</td><td class="r">20</td><td class="r">30</td></tr>
+      <tr><td>C</td><td class="r">0.10</td><td class="r">0.30</td><td class="r">30</td><td class="r">10</td></tr></tbody></table>
+      <p>Keep every A and every B: there are fewer than wanted. Keep one C in three, 10 of 30. Kept mass: \(0.50 + 0.20 + 0.10 = 0.80\).</p>
+      <h3>The acceptance rule</h3>
+      <p>Leviathan et al. (2023) and Chen et al. (2023): keep a proposal \(\omega\) with probability</p>
+      $$ \beta(\omega) := \min\Big\{1, \frac{p(\omega)}{q(\omega)}\Big\},\qquad \alpha := \sum_\omega\min\{p(\omega), q(\omega)\}. $$
+      <p>The overlap \(\alpha\) is the probability of acceptance, and \(\alpha = 1 - \mathrm{TV}(p,q)\), where \(\mathrm{TV}(p,q) := \tfrac12\sum_\omega|p(\omega) - q(\omega)|\) is the total variation distance.</p>
+      <h3>The residual fills the deficit</h3>
+      <p>Kept: \((0.50, 0.20, 0.10)\), total 0.80. Wanted: \((0.60, 0.30, 0.10)\). Missing: \((0.10, 0.10, 0)\), in total \(0.20 = 1-\alpha\). So on rejection, draw from the <b>residual</b>, with \([\cdot]_+ := \max\{\cdot, 0\}\):</p>
+      $$ p_{\text{res}}(\omega) := \frac{[p(\omega) - q(\omega)]_+}{1-\alpha},\qquad\text{here } p_{\text{res}} = (0.10, 0.10, 0)/0.20 . $$
+      <p>Accepted proposals supply the overlap; residual draws supply the deficit.</p>
+      <p><b>Claim.</b> Draw a proposal from \(q\); keep it with probability \(\beta\), otherwise draw from \(p_{\text{res}}\). The output has law \(p\). <i>Proof.</i> There are two disjoint ways to output \(\omega\): propose and keep it, or reject and draw it.</p>
+      $$ \mathbb P(\text{reject}) = \sum_\omega\big(q(\omega) - \min\{p(\omega),q(\omega)\}\big) = 1-\alpha, $$
+      $$ \mathbb P(\text{output}=\omega) = \min\{p(\omega),q(\omega)\} + (1-\alpha)\,p_{\text{res}}(\omega) = \min\{p(\omega),q(\omega)\} + [p(\omega)-q(\omega)]_+ = p(\omega). $$
+      <div data-widget="accept-rule"></div>
+      <p><b>Optimality for one token.</b> A <b>coupling</b> of \(q\) and \(p\) is any joint construction of a proposal with law \(q\) and an output with law \(p\). <b>Theorem.</b> For every coupling, \(\mathbb P(\text{proposal} = \text{output})\le\alpha\), and acceptance with the residual attains \(\alpha\). <i>Proof.</i> \(\mathbb P(\text{proposal} = \text{output} = \omega)\le\min\{q(\omega), p(\omega)\}\); sum over \(\omega\). On rejection, the residual never returns the rejected token.</p>`},
+    {id:'block', title:'Part III: the block algorithm', body:String.raw`
+      <p><b>The objects of a round.</b> With draft length \(K\), the drafter samples \(\xi_1,\dots,\xi_K\) one at a time, with conditionals \(q_i := q(\cdot\mid\text{prefix},\xi_{\lt i})\). One verification pass over the draft gives the target’s conditionals \(p_i := p(\cdot\mid\text{prefix},\xi_{\lt i})\) for \(i = 1,\dots,K+1\): one more than the number of proposals.</p>
+      <h3>One speculative round</h3>
+      <ol><li>Input: \(\xi_1,\dots,\xi_K\) from the draft; \(p_1,\dots,p_{K+1}\) from verification.</li>
+      <li>For \(i = 1,\dots,K\): draw \(U\sim\text{Uniform}[0,1]\); if \(U\le\min\{1, p_i(\xi_i)/q_i(\xi_i)\}\), accept \(\xi_i\); else draw \(\zeta\) from the residual of \(p_i, q_i\) and return \(\xi_{\lt i},\zeta\).</li>
+      <li>All accepted: draw the bonus token \(\zeta\sim p_{K+1}\); return \(\xi_1,\dots,\xi_K,\zeta\).</li></ol>
+      <table class="t"><thead><tr><th>Verification result</th><th>Committed output</th></tr></thead><tbody>
+      <tr><td>Reject the first proposal</td><td>\(\zeta\)</td></tr><tr><td>Accept A, B; reject C</td><td>A, B, \(\zeta\)</td></tr><tr><td>Accept all four</td><td>A, B, C, D, \(\zeta\)</td></tr></tbody></table>
+      <p>A round commits between 1 and \(K+1\) tokens, never zero.</p>
+      <p><b>Why the round stops.</b> After a rejection, the later conditionals assumed the rejected token; and the replacement never equals it, because rejection needs \(q_i>p_i\) there while the residual needs \(p_i>q_i\). After the bonus token, its next conditional has not been computed yet.</p>
+      <p><b>The KV cache after a rejection.</b> If A and B are accepted and C rejected, keep the cache entries of the accepted prefix A, B; discard those of C and D; the fresh token’s entries are added in the next pass.</p>
+      <div data-widget="spec-round"></div>
+      <p><b>Theorem.</b> With exact arithmetic and exact sampling, the concatenated rounds generate from the target: for every continuation \(\omega_1,\dots,\omega_{n_{\text{out}}}\),</p>
+      $$ \mathbb P(\omega_1,\dots,\omega_{n_{\text{out}}}\mid\text{prefix}) = \prod_{t=1}^{n_{\text{out}}}p(\omega_t\mid\text{prefix},\omega_{\lt t}). $$
+      <p><i>Proof idea.</i> The chain rule and induction: each committed token, given everything before it, was produced by the one-token rule with target conditional \(p\), and a round never commits a token whose conditional assumed a rejected one.</p>`},
+    {id:'speedup', title:'Part IV: how much does a round buy?', body:String.raw`
+      <p><b>Tokens per round.</b> Assume each reached proposal is accepted with probability \(\alpha\). Position \(i\) is reached only if every earlier proposal of the round was accepted, which has probability \(\alpha^{i}\) for the \((i+1)\)-th committed token. Counting the fresh token (the residual draw or the bonus), the tail-sum formula gives</p>
+      $$ \mathbb E[\text{tokens per round}] = 1 + \alpha + \cdots + \alpha^K = \frac{1-\alpha^{K+1}}{1-\alpha}. $$
+      <div data-widget="tokens-round"></div>
+      <h3>From tokens to time</h3>
+      $$ \text{speedup}\approx\frac{\text{one ordinary target step}\times\mathbb E[\text{tokens per round}]}{\text{draft time} + \text{verification time} + \text{other overhead}}. $$
+      <p>With \(\alpha = 0.8\), drafting 0.05 step per token and verification costing one step, the predicted speedup is 1.71 at \(K = 1\), 2.80 at \(K = 4\), a best of 3.09 at \(K = 8\), and 2.72 at \(K = 16\). Each extra proposal adds only \(\alpha^{K+1}\) expected tokens, while drafting cost keeps growing.</p>
+      <div data-widget="speedup-k"></div>
+      <p><b>When speculation pays.</b> With one request, arithmetic waits on weight traffic, and speculation can use it. With many requests, batching (serving them together) already reuses the weights; speculation then competes for compute and memory. With long contexts, every candidate position attends to the whole KV cache, and that traffic can dominate even with perfect weight reuse. The gain depends on the regime, not only on acceptance.</p>
+      <h3>Optimal per token, not per block</h3>
+      <p>The coupling theorem covers one token. What about a whole draft? Sun et al. (2025): take tokens A, B with \(p = (\tfrac13, \tfrac23)\) and \(q = (\tfrac23, \tfrac13)\) at every position, and drafts of length 2. Tokenwise, \(\alpha = \tfrac23\) and accepted draft tokens per round average \(\alpha + \alpha^2 = \tfrac{10}9\). The draft “A B” is equally likely under \(q\) and \(p\) (\(\tfrac29\) each), yet tokenwise verification keeps its A only half the time. A verifier that judges the whole draft does better:</p>
+      <table class="t"><thead><tr><th>Draft</th><th class="r">q(draft)</th><th class="r">p(draft)</th><th class="r">Tokenwise accepted</th><th class="r">Block accepted</th></tr></thead><tbody>
+      <tr><td>AA</td><td class="r">4/9</td><td class="r">1/9</td><td class="r">3/4</td><td class="r">1/2</td></tr>
+      <tr><td>AB</td><td class="r">2/9</td><td class="r">2/9</td><td class="r">1</td><td class="r">2</td></tr>
+      <tr><td>BA</td><td class="r">2/9</td><td class="r">2/9</td><td class="r">3/2</td><td class="r">3/2</td></tr>
+      <tr><td>BB</td><td class="r">1/9</td><td class="r">4/9</td><td class="r">2</td><td class="r">2</td></tr>
+      <tr><td><b>Average over q</b></td><td></td><td></td><td class="r"><b>10/9</b></td><td class="r"><b>11/9</b></td></tr></tbody></table>
+      <p>Block verification keeps A B whole and pays for it on A A; the output still has law \(p\). Joint decisions can use a draft better than tokenwise ones.</p>
+      <h3>One chain or many futures</h3>
+      <p>A chain bets on one continuation, and an early mismatch wastes the rest. A tree keeps alternatives: each node is a candidate prefix. To check every node in one pass, the target uses <b>tree attention</b>: its own attention with a tree mask, where each node attends to the prefix, its ancestors and itself, never to another branch.</p>
+      <div data-widget="tree-mask"></div>
+      <p><b>An exact sampler on a fixed tree.</b> (1) At the current node, draw a token from the target. (2) If it is a child in the tree, emit it and move there; repeat. (3) Otherwise emit it and stop; at a leaf, draw once more and stop. It is exact because every token is drawn from the target at its actual history.</p>
+      <div data-widget="tree-sampler"></div>
+      <p><b>Finding the best tree</b> (Sequoia, Chen et al., 2024). Each accepted node adds a token and one fresh token ends the round, so \(\mathbb E[\text{tokens per round}] = 1 + \sum_{\text{nodes}}\mathbb P(\text{the node is accepted})\). Assume the \(k\)-th child of an accepted node is accepted with probability \(\psi_k\), whatever the context. With \(V(n,b)\) the best expected tokens per round of a tree of \(n\) nodes (root included) whose root has \(b\) children, and \(V(1,0) = 1\):</p>
+      $$ V(n,b) = \max_{1\le m\lt n}\Big[V(n-m, b-1) + \psi_b\max_jV(m,j)\Big]. $$
+      <p>The \(b\)-th child’s subtree gets \(m\) nodes; the rest of the tree keeps \(b-1\) children. This offline dynamic programme is optimal under the assumption.</p>
+      <div data-widget="sequoia-dp"></div>`},
+    {id:'drafts', title:'Part V: where the draft comes from', body:String.raw`
+      <p>You serve a 70-billion-weight model, and the verifier of Part III keeps its law exactly. Where could cheap guesses of its next tokens come from? <b>Any guess is allowed</b>: the verifier needs only the law \(q\) it was drawn from. A fixed (deterministic) guess A is accepted with probability \(p(A)\). Four places to look, not equal and not equally supported: (1) a separate small model; (2) text that already exists; (3) extra heads on the target; (4) the target itself, run more cheaply.</p>
+      <h3>A smaller language model, or existing text</h3>
+      <p><b>Smaller language model:</b> reuse a compatible model (T5-small drafting for T5-XXL; a 4B model for a 70B one). It costs extra weights, an extra cache and draft time. A draft model can be trained to match the target: DistillSpec (Zhou et al., 2024); online adaptation (Liu et al., 2024).</p>
+      <p><b>Lookup in existing text:</b> the prompt, previous output, or a corpus. If “the cat sat on the mat” appeared earlier and the output now ends “… the cat”, propose “sat on the mat”. No draft model to run; works best when text repeats (code edits, summaries that quote, retrieval).</p>
+      <div data-widget="prompt-lookup"></div>
+      <h3>Heads on the target: Medusa, EAGLE, MTP</h3>
+      <p><b>Medusa</b> (Cai et al., 2024): why another model, when the target already has clues about future tokens? Extra heads read the last hidden state \(\varphi_t\) and predict positions \(t+2, t+3,\dots\) in parallel, beside the original head’s \(t+1\); a candidate tree is verified. Later heads do not see earlier candidate choices.</p>
+      <p><b>EAGLE-1</b> (Li et al., 2024): advance the hidden state after each chosen token. One decoder layer takes \((\varphi_t, \operatorname{emb}(\omega_{t+1}))\) to \(\hat\varphi_{t+1}\), the target’s own output head gives \(\xi_{t+2}\), and the same layer is reused sequentially. It is trained once to match target features and token probabilities, and the target verifies candidates together. <b>EAGLE-2</b> lets confidence shape the tree: wider where the drafter is uncertain, deeper where it is confident, favouring paths likely to survive verification for the same budget. <b>EAGLE-3</b> trains a better drafter: it uses low, middle and high target features, trains on its own outputs, uses token prediction loss only, and drops hidden-state matching.</p>
+      <p><b>DeepSeek-V3 multi-token prediction (MTP)</b> (DeepSeek-AI, 2024): normalise and project \((\varphi_t, \operatorname{emb}(\omega_{t+1}))\), one transformer block, a shared output head gives \(\xi_{t+2}\). Like EAGLE, the hidden state and the preceding token drive each prediction; unlike Medusa, predictions follow a causal chain. The backbone and module are trained jointly, and at inference the module is reused as a drafter.</p>
+      <div data-widget="heads-anim"></div>
+      <table class="t"><thead><tr><th>Draft source</th><th>vLLM</th><th>SGLang</th><th>TensorRT-LLM</th></tr></thead><tbody>
+      <tr><td>Separate draft model</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>n-gram (prompt lookup)</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>Medusa</td><td>-</td><td>–</td><td>legacy</td></tr>
+      <tr><td>EAGLE-1, EAGLE-2</td><td>yes</td><td>yes</td><td>legacy</td></tr>
+      <tr><td>EAGLE-3</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>MTP (DeepSeek-V3)</td><td>yes</td><td>yes</td><td>yes</td></tr></tbody></table>
+      <p class="src">Support as reported in the slides. All three verify one chain by default; two also offer trees.</p>`},
+    {id:'other', title:'Part VI: other approaches to efficiency', body:String.raw`
+      <p><b>Find the dominant cost first.</b> <i>Prefill</i> is the pass over the prompt; <i>time to first token</i> is queueing plus prefill; <i>time per output token</i> is one decoding step:</p>
+      $$ \text{request time}\approx\text{time to first token} + (\text{output tokens} - 1)\times\text{time per output token}. $$
+      <p>If queueing and prefill take 2 s and decoding 1 s, halving decoding gives 2.5 s, not 1.5 s. Speculation shortens only the decoding part.</p>
+      <div data-widget="request-time"></div>
+      <p><b>Prefix caching</b> (SGLang, Zheng et al., 2024). Three requests share a system prompt and a document, then ask different questions. The shared prefix is evaluated once and its keys and values are reused; only each question is new prompt work.</p>
+      <div data-widget="prefix-cache"></div>
+      <p><b>Batching shares each weight read</b> (Orca, Yu et al., 2022). Reading 16 GB at 2 TB/s takes 8 ms; the arithmetic for 1 token takes 0.16 ms, for 4 tokens (four guesses or four requests) 0.64 ms, and for 50 tokens 8 ms. Batching and speculation compete for the same idle arithmetic. (The first widget on this page lets you vary the number of tokens per weight read.)</p>
+      <p><b>The KV cache limits the batch</b> (PagedAttention, Kwon et al., 2023). Requests share the weights, but each holds its own KV cache. Reserving 16 slots each for three requests of lengths 3, 7 and 9 holds 48 slots; fixed-size blocks of 4, allocated on demand, hold 24. Less wasted memory means more requests per weight read.</p>
+      <div data-widget="paged-kv"></div>
+      <table class="t"><thead><tr><th>Principle</th><th>Examples</th></tr></thead><tbody>
+      <tr><td>Move fewer bytes</td><td>Quantization; fewer KV heads</td></tr><tr><td>Do more work per fetched byte</td><td>Speculative verification; batching</td></tr>
+      <tr><td>Reuse previous computation</td><td>The KV cache; prefix caching</td></tr><tr><td>Use memory better</td><td>Paging</td></tr></tbody></table>
+      <p>A saving in one cost can expose another.</p>
+      <h3>Speculative decoding: five results</h3>
+      <ol><li>Checking several supplied tokens costs about one pass.</li><li>Accept, else draw from the residual: the output has law \(p\).</li><li>Rounds keep the law of the whole sequence.</li><li>Constant \(\alpha\): a round commits \(1+\alpha+\cdots+\alpha^K\) tokens on average.</li><li>Better drafts and trees add progress per pass.</li></ol>
+      <p>Cheap guesses change the schedule; exact verification keeps the law.</p>`},
+    {id:'research', title:'Research questions', body:String.raw`
+      <h3>Research 1: verifying whole drafts</h3>
+      <p>For one proposed token, the maximal coupling is the best exact verifier. With several drafts, a block or a tree, which verifier makes the most progress? For several drafts of one token the best verifier solves an optimal-transport problem, a linear programme whose best-known solution time is exponential in the number of drafts; practical rules fall short of it, and for drafts drawn independently from one drafter it can now be computed to any accuracy. For trees, judging whole paths from leaf to root stays exact and reports longer accepted runs, but is proved optimal only for a single chain. Not settled: the best verifier for a general tree, and how to choose the tree and the verifier together. References: Sun et al. (NeurIPS 2023), Hu et al. (ICLR 2025), Weng et al. (NeurIPS 2025), Thomas and Pal (ICLR 2026), Sun et al. (ICLR 2025).</p>
+      <h3>Research 2: speculation under load</h3>
+      <p>On a busy server, when does speculation still pay, and how should the draft length follow the load? Batching already reuses the weights, so speculation competes with other useful work. Measured: the best draft length falls as the batch grows, and speculation added without tuning can degrade serving. With long contexts the cache dominates, and speculation can speed up even large batches. In a decision model of draft length, the best rule stops drafting once a rejection becomes likely; a rule that looks at the drafted tokens needs its own exactness argument. References: Su et al. (2023), Liu et al. (2024), Sadhukhan et al. (ICLR 2025), Huang et al. (COLM 2025).</p>
+      <h3>Research 3: training for acceptance</h3>
+      <p>A drafter is useful when the target accepts its tokens. How should it be trained for that, rather than to be a good model on its own? One-token acceptance is one minus the total variation distance, so that distance is the natural loss; in practice it is not consistently the best, and training on text the drafter itself generates matters. A drafter can keep learning from the queries a server receives, and can be trained on the contexts it will meet when drafting. Which training loss maximises accepted progress per unit of drafting cost? References: Zhou et al. (ICLR 2024), Liu et al. (ICML 2024), Zhang et al. (ICLR 2025), Li et al. (NeurIPS 2025).</p>
+      <h3>Research 4: one state, many decisions</h3>
+      <p>How small can a shared state representation be if it must support many future questions from a decision model (like Jev)? Decision models return choice probabilities without generating text, but may still read a long state for each question; prefix caching reuses prefill, yet repeated attention can remain costly. How should the state be compressed before questions arrive, keeping the decision error below a target rate \(\varepsilon\)? What memory is necessary, and what changes under adaptive queries? Compare memory, latency and decision error against full prefix caching and learned compression. References: Jev / TypeSafe AI, Gist (NeurIPS 2023), COCOM (WSDM 2025).</p>
+      <p>Next: post-training.</p>`}
+  ],
+  quiz:[
+    {q:'Why does checking K drafted tokens cost about the same as generating one?', options:['The draft is shorter','A decoding pass is limited by reading the weights; the extra K positions add mostly idle arithmetic','The target skips attention'], answer:1, why:'Reading 16 GB takes 8 ms; arithmetic for one token takes 0.16 ms, so dozens of positions fit in the same pass.'},
+    {q:'With p = (0.6, 0.3, 0.1) and q = (0.5, 0.2, 0.3), what is the acceptance probability α?', options:['0.6','0.8','0.9'], answer:1, why:'α = Σ min{p, q} = 0.5 + 0.2 + 0.1 = 0.8 = 1 − TV(p, q).'},
+    {q:'After a rejection at position i, why can the residual never return the rejected token?', options:['It is removed from the vocabulary','Rejection needs qᵢ > pᵢ at that token, while the residual is positive only where pᵢ > qᵢ','The residual is uniform'], answer:1, why:'The residual [p − q]₊ is zero wherever q ≥ p.'},
+    {q:'With α = 0.8 and K = 4, how many tokens does a round commit on average?', options:['4','(1 − 0.8⁵)/0.2 ≈ 3.36','5'], answer:1, why:'1 + α + α² + α³ + α⁴, the tail-sum formula; never fewer than 1, never more than 5.'},
+    {q:'Queueing and prefill take 2 s, decoding 1 s. Speculation halves decoding. The request now takes…', options:['1.5 s','2.5 s','2 s'], answer:1, why:'Speculation shortens only decoding: 2 + 0.5 = 2.5 s. Find the dominant cost first.'}
+  ],
+  sources:['Leviathan, Kalman and Matias (2023)','Chen et al. (2023)','Sun et al. (2025), block verification','Chen et al. (2024), Sequoia','Zhou et al. (2024), DistillSpec','Liu et al. (2024), online speculative decoding','Cai et al. (2024), Medusa','Li et al. (2024, 2025), EAGLE-1/2/3','DeepSeek-AI (2024), DeepSeek-V3','Zheng et al. (2024), SGLang','Yu et al. (2022), Orca','Kwon et al. (2023), PagedAttention / vLLM','Sun et al. (NeurIPS 2023)','Hu et al. (ICLR 2025)','Weng et al. (NeurIPS 2025)','Thomas and Pal (ICLR 2026)','Su et al. (2023)','Sadhukhan et al. (ICLR 2025)','Huang et al. (COLM 2025)','Zhang et al. (ICLR 2025)','Li et al. (NeurIPS 2025)','Gist (NeurIPS 2023)','COCOM (WSDM 2025)']
+});
+</script>
+<script>
+/* =====================================================================
+   MIDTERM REVIEW DATA — one addReview() per lecture.
+   Fields: gist (1–2 sentences), use (when to reach for it), how (the
+   recipe), formulas (display math, short), trap (the classic mistake),
+   decide ([problem, answer, sectionId] rows for the decision guide),
+   links ([label, sectionId]). Keep each lecture under ~170 words.
+   A lecture with no review still appears, auto-summarised.
+   ===================================================================== */
+function addReview(id, r){ const L=COURSE.lectures.find(l=>l.id===id); if(L) L.review=r; }
+
+addReview('l1',{
+  gist:'Course map: pre-training, architecture, inference, post-training, risks. Every method trades one resource for another.',
+  use:'Framing any question: which cost (training compute, inference, memory, bandwidth) does a method save, and what does it give up?',
+  how:'For each method state the mechanism, whether the argument is exact, approximate or empirical, what it saves, and a falsifiable prediction.',
+  formulas:String.raw`$$ J = C_{\text{train}} + M\,c(N) \qquad \text{ASR}(Q)=\tfrac1n\textstyle\sum_i\mathbb 1\{\exists\,t\le Q: J_i=1\} $$`,
+  trap:'A single attack-success number means nothing without attacker access, query budget and evaluator.',
+  decide:[['Report robustness of a defence','A curve of 1 − ASR(Q) over attacker budget Q','jailbreak']],
+  links:[['Course outline','about'],['Rotation before quantizing','quant']]
+});
+addReview('l2',{
+  gist:'Decoder-only transformer, next-token log loss, and how to split compute C ≈ 6ND between parameters N and tokens D.',
+  use:'Planning a training run under a compute budget, or reasoning about what each block computes.',
+  how:'Fit L(N,D) on small runs; substitute D = C/(6N); the optimum balances the two marginal terms. Add 2NR if the model will serve R tokens.',
+  formulas:String.raw`$$ s_{tj}=\frac{q_t^\top k_j}{\sqrt{d_k}},\quad \mathbb E_P[-\log Q]=H(P)+\mathrm{KL}(P\|Q) $$ $$ L=E+AN^{-\alpha}+BD^{-\beta},\quad C\approx6ND $$ $$ \alpha AN^{-\alpha}=\beta BD^{-\beta}\ \Rightarrow\ N^*\propto C^{\beta/(\alpha+\beta)}\approx C^{0.5} $$`,
+  trap:'Kaplan’s N ∝ C^0.88 was an artefact (uncounted head, warmup, untuned optimizer); Chinchilla ≈ 20 tokens per parameter. Ignoring inference picks too large a model.',
+  decide:[['Split a fixed training budget','Chinchilla balance: N and D both ∝ √C','scaling'],['Model will serve many tokens','Smaller N, more D (6ND + 2NR)','beyond']],
+  links:[['Attention','attention'],['Why softmax','softmax'],['Scaling laws','scaling']]
+});
+addReview('l3',{
+  gist:'Every optimizer is the best linear step inside some ball: Euclidean (GD), ellipse (AdaGrad), box (sign/Adam), spectral norm (Muon).',
+  use:'Choosing or explaining an update rule; diagnosing divergence or slow progress on ill-conditioned losses.',
+  how:'SGD for cheap unbiased gradients; momentum to average noise; Adam for per-coordinate scale; Muon (orthogonalised momentum via Newton–Schulz) on hidden matrices, AdamW on embeddings, head, norms.',
+  formulas:String.raw`$$ \operatorname{Var}[g_t]\propto\tfrac1B,\quad \operatorname{Var}(m_t)\to\tfrac{1-\mu}{1+\mu}\sigma^2 $$ $$ \hat m_t=\tfrac{m_t}{1-\beta_1^t},\quad \delta W^\star=-\rho\,UV^\top\ (G=U\Sigma V^\top) $$`,
+  trap:'GD is stable only if η < 2/λ_max (η < 0.02 on ½(100w₁² + w₂²)). Adam with β₁ = β₂ = 0 is sign descent.',
+  decide:[['Unequal curvature across coordinates','AdaGrad / Adam','curvature'],['Weight matrices of hidden layers','Muon','muon']],
+  links:[['Steepest descent geometry','geometry'],['Muon','muon']]
+});
+addReview('l4',{
+  gist:'Mixture of experts: a router sends each token to k of E MLPs. Parameters grow with E, per-token FLOPs with k.',
+  use:'Scaling capacity without scaling per-token compute; reasoning about load balance and all-to-all communication.',
+  how:'Top-k scores, softmax weights; balance with an auxiliary loss or router biases; cap expert capacity; shared + fine-grained experts (DeepSeekMoE).',
+  formulas:String.raw`$$ y=\textstyle\sum_{e\in\operatorname{TopK}}w_eF_e(h) $$ $$ \ell_{\text{aux}}=\tfrac1E\textstyle\sum_ef_e\,p_e,\quad \sum_eN_e=kT,\ \sum_eI_e=T $$`,
+  trap:'Top-1 with softmax over only the picked expert gives w = 1: no router gradient (Switch keeps p₁). Load is a count with no gradient. Router bias steers selection only, not the weights.',
+  decide:[['Experts overloaded','Aux loss fₑpₑ, capacity cap, or bias bₑ ← bₑ ∓ γ','balance'],['Experts too coarse','Fine-grained + shared experts','later']],
+  links:[['Routing','routing'],['Balance','balance'],['Many devices','devices']]
+});
+addReview('l5',{
+  gist:'Attention cost grows with context. Reuse (KV cache), read fewer entries (windows, DSA), or merge entries (CSA/HCA).',
+  use:'Long-context inference; estimating whether attention or the weights dominate a decode step.',
+  how:'Cache k, v; per token cost 24d² + 4td. Sliding windows keep W per layer; DSA scores all entries with a cheap indexer and reads top K; compression pools blocks into learned summaries.',
+  formulas:String.raw`$$ \text{full pass: }24Td^2+2T^2d $$ $$ \text{cached token: }24d^2\Big(1+\frac{t}{6d}\Big),\quad \text{window reach}\approx L(W-1)+1 $$`,
+  trap:'Windows forget entries; compression loses merged detail; DSA keeps everything (a later query can still pick it). DSA’s indexer gets no gradient through top-K: it is trained to imitate dense attention (KL).',
+  decide:[['Context far longer than 6d','Attention dominates: sparse or compressed attention','kv'],['Need every token recoverable','DSA (select), not compression','select']],
+  links:[['KV caching','kv'],['Read fewer','select'],['Summaries','compress']]
+});
+addReview('l6',{
+  gist:'Shrink each cache entry: share K/V across heads (MQA, GQA) or cache one latent (MLA); handle position with decoupled RoPE.',
+  use:'KV memory or bandwidth limits batch size or context length.',
+  how:'GQA: g KV heads for H query heads. MLA: cache c_t (512), fold U_K into the query and U_V into the output; add a 64-number rotated key for position.',
+  formulas:String.raw`$$ M_{\text{KV}}=B\cdot T\cdot L\cdot 2d\cdot b $$ $$ s_j=(U_Kq)^\top c_j,\quad o=U_V^\top\textstyle\sum_ja_jc_j,\quad \hat q_t^\top\hat k_j=q^\top R_{j-t}k $$`,
+  trap:'Sharing cuts storage and reads, not multiply-adds. Plain RoPE breaks MLA’s absorption (the absorbed query would depend on j).',
+  decide:[['Cache too big, keep quality','GQA-8 or MLA (576 numbers per entry vs 32,768)','mla']],
+  links:[['Cache size','size'],['MLA','mla'],['RoPE','rope']]
+});
+addReview('l7',{
+  gist:'Position: learned tables, RoPE (offset-only scores), ALiBi (distance penalty). Recurrent memory: a fixed-size state replaces the cache.',
+  use:'Choosing a positional scheme (extrapolation?) or a linear-time layer; reading hybrid designs like Kimi K3.',
+  how:'RoPE rotates pairs at speeds θᵢ; ALiBi subtracts m_h(t − j). Linear attention: S += vφ(k)ᵀ. Delta rule corrects instead of adding; decay forgets; KDA = per-feature decay + delta.',
+  formulas:String.raw`$$ \theta_i=10000^{-2(i-1)/d},\quad \tilde s_{tj}=s_{tj}-m_h(t-j) $$ $$ \tilde S_t=S_{t-1}\operatorname{Diag}(\alpha_t),\quad S_t=\tilde S_t+\beta_t(v_t-\tilde S_tk_t)k_t^\top $$ $$ \text{Kimi K3: } M(T)=69s+24cT $$`,
+  trap:'Learned positions don’t extrapolate; one RoPE speed repeats. A fixed state cannot hold more than about d_k independent pairs, so hybrids keep some full-attention layers.',
+  decide:[['Inputs longer than training','ALiBi extrapolates; RoPE perplexity rises','alibi'],['Constant memory per layer','Recurrent layer (Gated DeltaNet, KDA)','decay']],
+  links:[['RoPE','rope'],['Linear attention','linear'],['Delta rule','delta'],['Kimi K3','k3']]
+});
+addReview('l8',{
+  gist:'Quantize the KV cache online, with no data, at 2–4 bits, keeping ⟨q, k⟩ accurate: rotate, Lloyd–Max levels, then debias.',
+  use:'Compressing vectors whose inner products matter and whose distribution is unknown in advance.',
+  how:'Normalise, random (Hadamard) rotation, optimal levels for 𝒩(0, 1/d), store ‖x‖. Debias by rescaling (RaBitQ) or TurboQuant: b−1 bits of levels + 1-bit sign sketch of the residual.',
+  formulas:String.raw`$$ t_i=\tfrac{c_i+c_{i+1}}2,\quad c_i=\mathbb E[X\mid\text{cell } i],\quad D\ge\sigma^24^{-b} $$ $$ \mathbb E\langle q,\hat x\rangle=(1-D_b)\langle q,x\rangle,\quad D_1=0.363,\ D_2=0.118 $$ $$ \text{JL: } m\ge\frac{8(2\ln n+\ln(1/\delta))}{\varepsilon^2} $$`,
+  trap:'Low MSE ≠ unbiased inner products: 1-bit slope 0.64 flattens attention. Values only need small MSE. Deployed caches are often 8-bit, and a smaller cache buys context, not speed.',
+  decide:[['Outlier channels, no calibration','Random rotation (Hadamard)','rotation'],['Biased attention scores','Rescale, or TurboQuant residual sketch','sketch']],
+  links:[['Lloyd–Max','scalar'],['Rotation','rotation'],['Bias','bias'],['TurboQuant','sketch'],['JL','jl']]
+});
+addReview('l9',{
+  gist:'Round weights to preserve the layer output (GPTQ), tame activation outliers (per-token scales, SmoothQuant, AWQ, rotations), train through rounding (STE), and check which bottleneck you hit.',
+  use:'Shipping a 4- or 8-bit model; deciding W4A16 vs W8A8 vs W4A4 for decode vs prefill.',
+  how:'Estimate H from calibration; GPTQ rounds column by column with error feedback (Babai’s nearest plane). For activations fold per-channel scales into W.',
+  formulas:String.raw`$$ \mathbb E\|(\widehat W-W)x\|^2=\textstyle\sum_i e_i^\top He_i,\quad H=\mathbb E[xx^\top] $$ $$ \text{GPTQ: } e^\top He\le\tfrac14\operatorname{tr}(\Delta),\quad WX=(W\Lambda)(\Lambda^{-1}X) $$ $$ \text{time}\gtrsim\max\Big(\tfrac{\text{bytes}}{\text{bandwidth}},\tfrac{\text{ops}}{\text{compute rate}}\Big) $$`,
+  trap:'Nearest rounding ignores correlated inputs (puzzle: 14/75 vs 4/75). Greedy GPTQ isn’t always optimal. Per-channel activation scales can’t factor out of matmul. Bit savings don’t multiply.',
+  decide:[['Decode (few tokens), memory-bound','Weight-only W4A16 (GPTQ/AWQ)','speed'],['Prefill / big batch, compute-bound','W8A8 (SmoothQuant) or W4A4 with native kernels','speed'],['PTQ loses too much','QAT with straight-through estimator','qat']],
+  links:[['Rounding puzzle','puzzle'],['GPTQ','gptq'],['Activations','activations'],['Speed','speed']]
+});
+addReview('l10',{
+  gist:'A cheap drafter proposes K tokens; the target checks all in one pass; accept/residual keeps the exact target distribution.',
+  use:'Low-batch, memory-bound decoding where arithmetic sits idle.',
+  how:'Accept ξ with prob. min{1, p/q}, else sample the residual; stop at first rejection or add a bonus token. Drafts: small model, prompt lookup, Medusa, EAGLE, MTP; trees via tree attention.',
+  formulas:String.raw`$$ \alpha=\textstyle\sum_\omega\min(p,q)=1-\mathrm{TV},\quad p_{\text{res}}=\frac{[p-q]_+}{1-\alpha} $$ $$ \mathbb E[\text{tokens}]=\frac{1-\alpha^{K+1}}{1-\alpha},\quad \text{speedup}\approx\frac{\mathbb E[\text{tokens}]}{K\,c_{\text{draft}}+c_{\text{verify}}} $$`,
+  trap:'Greedy match keeps the argmax, not the distribution. Speculation shortens only decoding (2 s + 1 s → 2.5 s), and under heavy batching it competes with batching for the same idle compute.',
+  decide:[['Decode slow at batch 1','Speculative decoding (best K finite)','speedup'],['Shared long prompts','Prefix caching','other'],['KV memory limits batch','PagedAttention','other']],
+  links:[['Acceptance rule','exact'],['Round','block'],['Speedup','speedup'],['Draft sources','drafts']]
+});
+</script>
+<script>
+/* =====================================================================
+   VARIABLE GLOSSARY — hover (or tap) a symbol in any formula to see
+   what it is. Keys: 'x' (base), 'x_t' (with subscript text), 'hat x',
+   'tilde w', 'cal L' (\mathcal), 'bb E' (\mathbb). addGlossary(id,
+   {symbol: meaning}, {sectionId: {symbol: meaning}}) — section entries
+   override lecture entries, which override GLOSS_GLOBAL.
+   ===================================================================== */
+const GLOSS={}, GLOSS_GLOBAL={'bb E':'expectation (average over the randomness)','bb R':'the real numbers','bb Z':'the integers','bb P':'probability','bb 1':'indicator: 1 if the condition holds, else 0','bb 1_n':'vector of n ones','cal N':'normal (Gaussian) distribution',I:'identity matrix',I_d:'d × d identity matrix',I_dk:'identity matrix of size d_k',O:'order of growth (big-O)',Θ:'order of growth, up to constant factors','δ_ij':'1 if i = j, else 0 (Kronecker delta)'};
+function addGlossary(id, map, by){ GLOSS[id]={map, by:by||{}}; }
+
+addGlossary('l1',{N:'number of parameters',D:'number of training tokens',C:'compute budget (FLOPs)',κ:'FLOPs per parameter per token (≈ 6)',L:'validation loss',L_:'loss','L_∞':'irreducible loss: the loss floor no model reaches below',A:'fitted coefficient of the parameter term',B:'fitted coefficient of the data term',α:'parameter exponent (fitted)',β:'data exponent (fitted)',J:'lifetime compute: training + serving',M:'number of future tokens served',c:'inference compute per token, c(N)',C_train:'training compute',W_1:'first MLP weight matrix',W_2:'second MLP weight matrix',φ:'nonlinearity (activation function)',F:'feed-forward block output',T:'selected expert set',W_r:'router matrix',k:'number of experts chosen per token'},
+ {quant:{x:'original vector',y:'second vector',Q:'quantizer: maps a vector to a short code','hat x':'reconstruction of x from its code','hat y':'reconstruction of y',R:'random rotation matrix',z:'rotated vector z = Rx',d:'vector dimension'},
+  jailbreak:{Q:'attacker’s query budget',n:'number of behaviours tested',J:'evaluator: 1 if the response is a successful jailbreak',J_i:'evaluator for behaviour i',M:'target system (model + safety wrapper)',x:'prompt',x_it:'prompt for behaviour i at round t',t:'attack round',A:'attacker',s:'adversarial suffix','s^*':'best suffix found',τ:'target prefix the attacker wants the model to start with',q:'restricted request',p_θ:'target model’s probability',θ:'model parameters',L:'attack loss'},
+  distill:{S:'learning operator (one round of fitting)',y:'original targets','hat y':'predictions','hat y^':'predictions after t rounds',t:'number of distillation rounds'}});
+
+addGlossary('l2',{T:'sequence length (number of tokens)',t:'position of the current token',j:'position of an earlier token',d:'model width (size of each hidden vector)',d_k:'width of query and key vectors',d_ff:'MLP hidden width',h_t:'hidden state (vector) at position t',h:'hidden state vector',H:'matrix of all hidden states in a layer',q_t:'query of position t: what it looks for',k_j:'key of position j: what it is about',v_j:'value of position j: what it passes on',q:'query vector',k:'key vector',v:'value vector',W_Q:'query projection matrix',W_K:'key projection matrix',W_V:'value projection matrix',s_tj:'attention score of query t on key j',a_tj:'attention weight of query t on key j (softmax of scores)',o_t:'attention output at position t',x_t:'token at position t',x:'token',θ:'model parameters',p_θ:'the model’s next-token distribution',τ:'softmax temperature',W_1:'first MLP matrix (d_ff × d)',W_2:'second MLP matrix (d × d_ff)',φ:'MLP nonlinearity',g:'RMSNorm learned gain vector',ε:'small constant for numerical stability',z_T:'normalised final hidden state of the last position',s_T:'vocabulary scores at the last position',W_vocab:'vocabulary (output) projection matrix',P:'true data distribution',Q:'model distribution',H_:'entropy','cal L':'average next-token log loss','hat cal L':'empirical (observed) log loss',N:'number of parameters',D:'number of training tokens',C:'training compute (FLOPs)',L:'number of blocks',E:'irreducible loss (fitted)',A:'fitted coefficient of the parameter term',B:'fitted coefficient of the data term',α:'parameter exponent (≈ 0.34)',β:'data exponent (≈ 0.28)','N^*':'compute-optimal parameter count','D^*':'compute-optimal token count',Y:'quantity being predicted',X:'scale variable',a:'power-law exponent',R:'total tokens served over the model’s life',U:'number of unique tokens'},
+ {softmax:{P_i:'probability of option i',s:'vector of scores',s_i:'score of option i',s_A:'score of option A',s_B:'score of option B',s_C:'score of option C',g:'odds function: P_i/P_j = g(s_i − s_j)',f:'log of the odds function, f = log g',c:'constant c = f(1)',x:'score difference',y:'score difference',m:'integer numerator',n:'integer denominator',τ:'temperature, τ = 1/c',p:'softmax output',p_i:'softmax probability of coordinate i'},
+  training:{H:'entropy',X:'a whole sequence',Q:'model’s distribution over sequences',P:'true distribution over sequences'},
+  scaling:{L:'predicted loss','hat cal L':'fitted loss model',E:'irreducible loss (fitted)'},
+  beyond:{E:'number of epochs (passes over the unique data)',U:'unique tokens available',R:'tokens served over the model’s life'},
+  blackbox:{T:'length of the prefix'}});
+
+addGlossary('l3',{θ:'parameters',θ_t:'parameters at step t',θ_t:'parameters at step t',η:'step size (learning rate)',η_t:'step size at step t','cal L':'average training loss',ℓ_i:'loss on example i',n:'number of training examples',δ:'proposed step','δ^⋆':'best step inside the ball',ρ:'radius of the trust region (step length)',g_t:'gradient estimate at step t',g:'gradient',B:'batch size','cal B_t':'random batch at step t',w:'weights',w_1:'first weight (steep direction)',w_2:'second weight (shallow direction)',f:'objective function',s_t:'running sum of squared gradients (AdaGrad)',s_tj:'AdaGrad sum for coordinate j',ε:'small constant to avoid division by zero',m_t:'momentum: running average of gradients',μ:'momentum coefficient',v_t:'running average of squared gradients (Adam)',β_1:'Adam decay rate for the momentum',β_2:'Adam decay rate for the squared gradients','hat m_t':'bias-corrected momentum','hat v_t':'bias-corrected second moment',ξ_t:'gradient noise at step t',σ:'noise standard deviation',V_t:'variance of the momentum average',d_j:'weight of coordinate j in the ellipse',W:'weight matrix','δ W':'change to the weight matrix',G:'gradient matrix',U:'left singular vectors',V:'right singular vectors',Σ:'singular values (diagonal)',σ_i:'i-th singular value',σ_max:'largest singular value',u_i:'i-th left singular vector',v_i:'i-th right singular vector',r:'rank',c_i:'coefficient of x along v_i',A:'a matrix',M_t:'momentum matrix (Muon)',s:'scale factor for the update',x:'unit input vector',H:'curvature matrix'});
+
+addGlossary('l4',{h:'token’s hidden vector',E:'number of experts',k:'experts chosen per token (top-k)',s:'router scores, one per expert',s_e:'router score of expert e',W_r:'router matrix (E × d)',S:'set of selected experts',w_e:'mixing weight of expert e',F_e:'expert e (an MLP)',F_0:'shared expert, run on every token',y:'layer output',T:'tokens in the batch',N_e:'load: tokens sent to expert e',I_e:'importance: total weight given to expert e',λ_I:'weight of the importance penalty',λ_N:'weight of the load penalty','hat N_e':'smooth (differentiable) load estimate',σ_e:'learned noise scale for expert e',ε_e:'standard normal noise',W_noise:'noise projection matrix',κ_e:'threshold: the k-th largest of the other noisy scores',q_e:'probability expert e is picked',Φ:'standard normal CDF',f_e:'fraction of first choices that went to expert e',p_e:'average full-softmax probability of expert e',T_g:'tokens in one local group','ℓ_aux':'auxiliary balancing loss',m:'fine-grained split factor',b_e:'selection bias for expert e',γ:'bias update step size',p_1:'full-softmax probability of the top expert',w_1:'weight of the first chosen expert',d:'model width'});
+
+addGlossary('l5',{T:'number of tokens (context length)',t:'current position',d:'model width',H:'number of attention heads',W:'window size (positions each query reads)',K:'number of entries DSA reads per query',L:'number of layers',I_tj:'indexer score of entry j for query t',w:'indexer head weight',q_th:'indexer query of head h',k_j:'indexer search key of position j',H_I:'number of indexer heads',c:'block size for compression',U:'contents projected for pooling',Z:'pooling scores',B:'learned per-position bias',W_U:'content projection',W_Z:'score projection',α_jr:'pooling weight of position j for coordinate r',u_r:'coordinate r of the stored summary',U_jr:'content of position j, coordinate r',Z_jr:'pooling score of position j, coordinate r'},
+ {compress:{H:'block of c consecutive hidden states (c × d)'}});
+
+addGlossary('l6',{B:'number of sequences (batch)',T:'cached positions',L:'number of layers',d:'model width',b:'bytes per number',M_KV:'KV cache memory',H:'number of attention heads',d_k:'per-head key width',d_v:'per-head value width',h_t:'hidden state at position t',W_O:'output projection mixing the heads',c_t:'latent vector cached for token t',c_j:'cached latent of position j',d_c:'latent width (512 in DeepSeek)',W_D:'down-projection to the latent',U_K:'key up-projection',U_V:'value up-projection','tilde q':'absorbed query U_K q',q:'query of one head',a_j:'attention weight on position j',o:'head output',R_t:'rotation by position t (RoPE)',R_j:'rotation by position j','hat q_t':'rotated query','hat k_j':'rotated key',k_j:'key of position j',q_t:'query at position t',s_thj:'score of head h, query t, position j',a_thj:'attention weight of head h, query t, position j',z_th:'weighted sum of latents for head h',τ:'temperature',I_tj:'indexer score',w:'indexer head weight',H_I:'number of indexer heads',j:'cached position',t:'current position'});
+
+addGlossary('l7',{e:'token embedding table',x_t:'token at position t',p_t:'learned position vector for position t',h_t:'input vector at position t',M:'W_Q W_Kᵀ, the bilinear score matrix',e_t:'embedding of token t',W_Q:'query projection',W_K:'key projection',q:'query',k:'key',R_t:'rotation by angle tθ',R_j:'rotation by angle jθ',θ:'rotation speed (angle per token)',θ_i:'rotation speed of pair i',δ:'starting angle between query and key','hat q_t':'rotated query','hat k_j':'rotated key',d:'head dimension',i:'pair index',m_h:'ALiBi slope of head h',s_tj:'attention logit','tilde s_tj':'logit after the distance penalty',a_tj:'attention weight',d_k:'key width',Q:'query matrix',K:'key matrix',V:'value matrix',T:'sequence length',o_t:'output at position t',φ:'positive feature map (ELU + 1)',S_t:'recurrent state after token t',S:'recurrent state (keys → values map)',z_t:'running sum of features, for normalisation',v_t:'value written at step t',k_t:'key written at step t',q_t:'query at step t',β_t:'write strength (step size) at step t','hat v_t':'current prediction S k_t',ℓ_t:'squared prediction error',γ:'fixed decay factor',α_t:'learned decay (vector per feature, or scalar per head)','tilde S_t':'state after decay, before the correction',a:'how many tokens ago',s:'numbers per KDA state',c:'numbers per token per MLA layer'},
+ {alibi:{m:'slope (log 2 in the example)',s:'equal logit',t:'query position',j:'key position'},
+  delta:{S:'state: a linear predictor from keys to values'}});
+
+addGlossary('l8',{x:'vector to quantize (a key)','hat x':'reconstruction of x',d:'number of coordinates',Q:'quantizer','cal C':'codebook: the finite set of outputs',c:'a codeword',b:'rate: bits per coordinate',D:'distortion: expected squared error',X:'random number to quantize',f:'probability density of X',N:'number of levels, 2^b',c_i:'level i (reconstruction value)',t_i:'threshold between levels i and i+1',σ:'standard deviation',D_b:'distortion of the best b-bit levels for 𝒩(0,1)',Π:'random rotation matrix',k:'cached key',q:'query (kept in full precision)',v:'cached value',k_i:'key of token i',v_i:'value of token i','hat v_i':'quantized value',a_i:'attention weight',o:'attention output',g:'Gaussian random vector',y:'rotated, normalised key','hat y':'quantized rotated key',ξ:'random signs ±1',H_d:'Hadamard matrix of size d',H_k:'Hadamard matrix of size k',s:'random Gaussian direction',s_i:'i-th random direction (row of S)',S:'random sketch matrix','hat ℓ':'inner-product estimate',r:'residual x − x̂',m:'number of sketch rows (dimensions kept)',n:'number of points',ε:'allowed distortion',δ:'failure probability',u_i:'point i',u:'unit vector',C:'absolute constant'});
+
+addGlossary('l9',{W:'weight matrix','hat W':'quantized weight matrix',E_W:'weight error Ŵ − W',x:'layer input',y:'layer output',m:'number of rows (outputs)',d:'number of inputs (columns)',w:'one row of weights','hat w':'rounded row','tilde w':'corrected target before rounding','tilde w_2':'second weight after repair',w_1:'first weight',w_2:'second weight',e:'rounding error ŵ − w',e_i:'error of weight i',H:'second moment of the inputs, 𝔼[xxᵀ]',H_emp:'second moment estimated from calibration data',X_cal:'calibration inputs (columns)',n_cal:'number of calibration inputs',U:'unit upper-triangular factor of H',Δ:'diagonal factor of H: what each input adds beyond the later ones',U_ji:'compensation coefficient',r_i:'fresh rounding residual at step i',s:'grid spacing',s_i:'grid spacing of coordinate i',G:'lattice basis matrix',g_1:'first basis vector',g_2:'second basis vector','cal L':'lattice',z:'integer coefficients',p:'target point',A:'factor with H = AᵀA',x_t:'activation vector of token t',x_jt:'channel j of token t',τ_t:'per-token scale',C_max:'largest integer code (127 for INT8)',λ_j:'scale of channel j',Λ:'diagonal matrix of channel scales',X:'activation matrix (channels × tokens)',Π:'rotation matrix',Q:'quantizer',L:'training loss','hat w_i':'rounded weight i',w_i:'weight i',j:'index of an earlier weight',x_1:'first input',x_2:'second input',Y:'layer outputs for many tokens',X_run:'inputs at run time'});
+
+addGlossary('l10',{p:'target model’s next-token distribution',q:'drafter’s next-token distribution',ω:'a token','cal V':'vocabulary',Y_1:'first generated token',Y_2:'second generated token',Y_3:'third generated token',β:'probability of keeping a proposal',α:'acceptance probability (overlap of p and q)',TV:'total variation distance',p_res:'residual distribution used after a rejection',K:'draft length (proposals per round)',ξ_i:'i-th drafted token',q_i:'drafter’s conditional at position i',p_i:'target’s conditional at position i',U:'uniform random number in [0, 1]',ζ:'fresh token: residual draw or bonus',n_out:'number of output tokens',ω_t:'output token t',ψ_k:'acceptance probability of an accepted node’s k-th child',V:'best expected tokens per round',n:'number of nodes in the tree (root included)',b:'number of children of the root',m:'nodes given to the last child’s subtree',j:'children of that subtree’s root',φ_t:'target’s hidden state at position t','hat φ':'drafter’s predicted next hidden state',ω:'token',i:'position in the draft'});
+
+addGlossary('hw1',{Q:'query matrix (n × d)',K:'key matrix (n × d)',V:'value matrix (n × p)',n:'number of tokens (rows)',d:'query/key width',p:'value width',S:'score matrix',A:'left factor (m × n)',B:'right factor (n × p)',Z:'product AB',G:'upstream gradient ∇_Z L',L:'loss',x:'softmax input (scores)',p_i:'softmax probability i',g:'gradient with respect to p',y:'target distribution',α:'sum of exponentials'},
+ {p2:{N:'number of parameters',D:'number of training tokens',a:'coefficient of the parameter term',b:'coefficient of the data term',α:'parameter exponent',β:'data exponent',ℓ:'target excess loss',T:'expected inference tokens',C_T:'total compute at demand T',L:'excess loss over the baseline',N_min:'smallest model that can reach ℓ',N_0:'compute-optimal size when T = 0',D_0:'optimal tokens when T = 0',N_T:'optimal size at demand T',D_T:'optimal tokens at demand T',N_s:'a smaller model, between N_min and N_0',D_s:'its least feasible tokens',T_break:'demand at which the two cost the same',Δ:'cost difference',T_1:'smaller demand',T_2:'larger demand'},
+  p3:{H_n:'entropy of a distribution on n outcomes',p:'distribution',r:'second distribution',t:'probability of the first group',m:'size of the first group',n:'number of outcomes',u_n:'uniform distribution on n outcomes',A:'entropy of the uniform distribution, A(n)',a_i:'count of outcome i',N:'total count',P:'data distribution over sequences',Q:'model distribution over sequences',X:'random sequence',V:'vocabulary',T:'sequence length',p_t:'data’s next-token distribution',q_t:'model’s next-token distribution',H:'entropy',k:'number of groups',x_i:'distribution inside group i',s:'1 − p_{k+1}',j:'power of two',x:'argument of log'},
+  p1a:{}, p1b:{A:'left factor (m × n)',B:'right factor (n × p)'}, p1c:{p:'softmax output'}});
+
+
+function glossMore(id, map, by){ const G=GLOSS[id]; Object.assign(G.map, map); for(const [k,v] of Object.entries(by||{})) G.by[k]=Object.assign(G.by[k]||{}, v); }
+glossMore('l1',{x:'vector',w:'weight',L:'loss'});
+glossMore('l3',{Z:'a matrix',y:'output vector',L:'loss'});
+glossMore('l4',{N:'vector of loads, one per expert',I:'vector of importances, one per expert',λ:'penalty weight',w_a:'weight of the first choice a',w_b:'weight of the second choice b',F_a:'first-choice expert',F_b:'second-choice expert',a:'first-choice expert',b:'second-choice expert',W:'weight matrix',W_ij:'entry (i, j) of the weight matrix',g_i:'gradient computed on device i',n:'number of inputs',x:'input vector',v:'vector'});
+glossMore('l5',{Q:'query matrix',K:'key matrix',V:'value matrix',p_t:'dense attention distribution of query t (the indexer’s target)',k_jI:'indexer search key of position j',q_thI:'indexer query of head h at position t','cal S_t':'set of entries selected for query t',S_t:'set of entries selected for query t',h:'hidden state',g:'gate value',F:'expert output',v_j:'value of position j',k_t:'key of the new token',v_t:'value of the new token',n:'number of entries'});
+glossMore('l6',{W_Q:'per-head query projection',W_K:'per-head key projection',W_V:'per-head value projection',W_Qi:'query projection of head i',W_Ki:'key projection of head i',W_Vi:'value projection of head i',U_Ki:'key up-projection of head i',U_Vi:'value up-projection of head i',k_ji:'key of position j in head i',v_ji:'value of position j in head i',q_ti:'query of head i',k_ti:'key of the new token in head i',v_ti:'value of the new token in head i',v_j:'value of position j',h_j:'hidden state at position j',k_jR:'small rotated positional key of position j (64 numbers)',q_thR:'rotated positional query of head h',Q:'query matrix',K:'key matrix'});
+glossMore('l7',{v_j:'value of position j',p_j:'learned position vector for position j',R:'2 × 2 rotation matrix',β:'write strength',ε:'size of a change to one value',v_jc:'coordinate c of value j',x:'token',x_i:'token i',p:'learned position table',h:'input vector',t:'query position',j:'key position'});
+glossMore('l8',{I:'identity matrix',H_1:'1 × 1 Hadamard matrix (= 1)',H_2k:'Hadamard matrix of size 2k',H_4:'4 × 4 Hadamard matrix',N:'number of levels, 2^b'});
+glossMore('l9',{I:'identity matrix',g_d:'last lattice basis vector'});
+glossMore('l10',{A:'example token',B:'example token',C:'example token',k:'child rank',ε:'small error',c_draft:'drafting cost per token, in target steps',c_verify:'verification cost, in target steps',t:'position'});
+glossMore('hw1',{m:'rows of A',q:'second distribution',q_i:'probability of outcome i under q',Θ:'order of growth, up to constant factors'},{p2:{C_0:'total compute when T = 0',C_T1:'total compute at demand T₁',C_T2:'total compute at demand T₂'},p3:{Δ_n:'probability simplex: distributions on n outcomes',q:'model distribution',q_i:'model probability of outcome i'}});
+
+glossMore('l4',{D:'number of devices',L:'training loss',L_task:'prediction (task) loss',L_balance:'balancing loss'});
+glossMore('l5',{p:'dense attention distribution (summed over heads, normalised)',L_I:'indexer training loss',B:'learned per-position bias',r:'coordinate index'});
+glossMore('l7',{Z:'pooling scores',α:'decay factor'});
+glossMore('hw1',{W:'weight matrix',X:'input matrix',w_i:'weight i'});
+glossMore('l1',{L:'loss'},{midterm:{Q:'attacker’s query budget',n:'number of behaviours',J:'lifetime compute (left); evaluator (right)',J_i:'evaluator for behaviour i: 1 if jailbroken',t:'attack round',M:'number of future tokens served',c:'inference compute per token'}});
+glossMore('l2',{},{midterm:{L:'predicted loss',E:'irreducible loss (fitted)'}});
+glossMore('l8',{},{midterm:{n:'number of points',k:'key'}});
+GLOSS_GLOBAL['D_KL']='Kullback–Leibler divergence';
+/* ---------- engine ---------- */
+const IDX=new Set(['i','j','t','r','c','k','e','h','l','m','n']);
+function glossFor(lec, sec, keys){
+  const G=GLOSS[lec]; for(const k of keys){ if(G&&sec&&G.by[sec]&&G.by[sec][k]) return G.by[sec][k]; } for(const k of keys){ if(G&&G.map[k]) return G.map[k]; } for(const k of keys){ if(GLOSS_GLOBAL[k]) return GLOSS_GLOBAL[k]; } return null; }
+function varContext(el){
+  const card=el.closest('.mt-card'); if(card) return {lec:card.id.replace('mt-',''), sec:'midterm'};
+  const dec=el.closest('[data-lec-ref]'); if(dec) return {lec:dec.dataset.lecRef, sec:null};
+  const app=el.closest('[data-lec]'); const sec=el.closest('section[id]');
+  return {lec:app?app.dataset.lec:null, sec:sec?sec.id:null};
+}
+function annotateVars(root){
+  if(!root) return;
+  root.querySelectorAll('.katex-html span.mord').forEach(el=>{
+    if(el.dataset.vt || el.children.length || el.closest('.accent-body')) return;
+    const ch=el.textContent; if(!/^[A-Za-zα-ωΑ-Ωϑϕϵℓ∞]$/u.test(ch)) return;
+    const cls=el.classList; const pre=cls.contains('mathcal')?'cal ':cls.contains('mathbb')?'bb ':cls.contains('mathbf')?'bf ':'';
+    if(!pre && !cls.contains('mathnormal') && !/[α-ωΑ-Ω]/u.test(ch)) return; // upright letters (operator names) are not variables
+    const acc=el.closest('.accent'); let accent=''; let carrier=el;
+    if(acc && acc.contains(el)){ const g=(acc.querySelector('.accent-body')||{}).textContent||''; accent=/[\^ˆ]/.test(g)?'hat ':/[~˜]/.test(g)?'tilde ':''; carrier=acc; }
+    const inScript=!!el.closest('.msupsub');
+    let sub=''; const sib=carrier.nextElementSibling; if(sib&&sib.classList.contains('msupsub')){ sub=sib.textContent.replace(/[⊤′∗]/g,'').replace(/\s+/g,'').replace(/\u200b/g,''); }
+    const base=pre+ch, b2=accent+base;
+    sub=sub.replace(/,/g,'');
+    const keys=[]; if(sub){ keys.push(b2+'_'+sub, base+'_'+sub); for(let n=sub.length-1;n>=1;n--) keys.push(b2+'_'+sub.slice(0,n)); }
+    keys.push(b2, base);
+    if(inScript && IDX.has(ch) && !pre) return;
+    const ctx=varContext(el); let tip=glossFor(ctx.lec, ctx.sec, keys);
+    if(!tip && sub){ const G=GLOSS[ctx.lec]; const pool=G?{...G.map,...((ctx.sec&&G.by[ctx.sec])||{})}:{}; const k=Object.keys(pool).find(k=>k.startsWith(b2+'_')); if(k) tip=pool[k]+` (here with index ${sub})`; }
+    if(!tip) return;
+    el.dataset.vt='1'; el.classList.add('vt'); el.setAttribute('tabindex','0'); el.setAttribute('aria-label',`${ch}: ${tip}`); el.dataset.tip=tip;
+  });
+}
+(function(){ const _rm=renderMath; renderMath=function(root){ _rm(root); annotateVars(root); }; })();
+document.addEventListener('DOMContentLoaded',()=>{
+  const tipEl=h('div',{id:'vtip',role:'tooltip'}); tipEl.hidden=true; document.body.append(tipEl); let cur=null;
+  const show=el=>{ cur=el; const r=el.getBoundingClientRect(); tipEl.innerHTML=`<b>${el.textContent}</b> ${el.dataset.tip}`; tipEl.hidden=false; const tw=tipEl.offsetWidth, th=tipEl.offsetHeight; let x=r.left+r.width/2-tw/2; x=Math.max(8,Math.min(window.innerWidth-tw-8,x)); let y=r.top-th-8; if(y<8) y=r.bottom+8; tipEl.style.left=x+'px'; tipEl.style.top=y+'px'; };
+  const hide=()=>{ cur=null; tipEl.hidden=true; };
+  document.addEventListener('mouseover',e=>{ const v=e.target.closest&&e.target.closest('.vt'); if(v) show(v); else if(cur) hide(); });
+  document.addEventListener('focusin',e=>{ const v=e.target.closest&&e.target.closest('.vt'); if(v) show(v); });
+  document.addEventListener('focusout',e=>{ if(e.target.closest&&e.target.closest('.vt')) hide(); });
+  document.addEventListener('touchstart',e=>{ const v=e.target.closest&&e.target.closest('.vt'); if(v){ if(cur===v) hide(); else show(v); } else if(cur) hide(); },{passive:true});
+  window.addEventListener('scroll',()=>{ if(cur) hide(); },{passive:true});
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') hide(); });
 });
 </script>
 <script>
@@ -3493,6 +3930,270 @@ widget('roofline',(el)=>{
       series:cfgs.map(([nm,w,a,col])=>({pts:xs.map(x=>{ const tm=time(x,w,a); return [x,Math.max(tm.mem,tm.comp)]; }),color:col,width:nm===`W${wb}A${ab}`?3:1.4,label:nm})),legend:true,vlines:[{x:n,color:'#1B2433'}]});
     const tm=time(n,wb,ab), b16=time(n,16,16); const tt=Math.max(tm.mem,tm.comp), t16=Math.max(b16.mem,b16.comp);
     ro.innerHTML=`${n.toLocaleString()} token${n>1?'s':''}, W${wb}A${ab}: memory ${(tm.mem*1e6).toFixed(1)} µs, compute ${(tm.comp*1e6).toFixed(1)} µs → <b>${tm.mem>tm.comp?'memory-bound':'compute-bound'}</b>, ${(t16/tt).toFixed(2)}× faster than W16A16. ${n<=8?'Decode: reading weights dominates, so weight-only W4A16 pays off.':n>=512?'Prefill or large batch: arithmetic dominates; W4A16 dequantizes to 16-bit and gains little, native low-precision activations (W8A8, W4A4) pay.':''} Real kernels add unpacking and scaling overheads; these numbers are a first-order model.`; }
+  draw();
+});
+</script>
+<script>
+/* ---- Lecture 10: speculative decoding widgets ---- */
+const TOKC={A:'#9B1C1C',B:'#0F766E',C:'#B45309',D:'#4C51BF',E:'#64748B'};
+const sampleFrom=(p,r=Math.random())=>{ let i=0; while(i<p.length-1&&r>p[i]){ r-=p[i]; i++; } return i; };
+
+widget('weight-read',(el)=>{
+  box(el,'One weight read, many tokens','A decoding pass reads every weight once. Arithmetic grows with the number of tokens processed in that pass (2 FLOPs per weight per token). Until arithmetic catches up with the read, extra tokens are almost free.');
+  const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2); let bpw=2;
+  const N=slider(c,{label:'Weights (billions)',min:1,max:400,step:1,value:8,oninput:draw});
+  seg(c,[{label:'2 bytes',value:2},{label:'1 byte',value:1},{label:'½ byte',value:.5}],2,v=>{bpw=v;draw();},'Per weight');
+  const bw=slider(c2,{label:'Bandwidth TB/s',min:.5,max:8,step:.1,value:2,fmt:v=>v.toFixed(1),oninput:draw});
+  const fl=slider(c2,{label:'Compute TFLOP/s',min:20,max:2000,step:10,value:100,oninput:draw});
+  const T=slider(c2,{label:'Tokens per pass',min:0,max:8,step:.25,value:0,fmt:v=>Math.round(2**v),oninput:draw});
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function draw(){ const n=N.get()*1e9, tk=Math.round(2**T.get()); const rd=n*bpw/(bw.get()*1e12)*1e3, ar=2*n*tk/(fl.get()*1e12)*1e3; const mx=Math.max(rd,ar)*1.1;
+    svg.setAttribute('viewBox','0 0 640 110'); svg.classList.add('chart'); svg.innerHTML='';
+    [['read weights',rd,'#64748B'],[`arithmetic, ${tk} token${tk>1?'s':''}`,ar,'#9B1C1C']].forEach(([l,v,col],i)=>{ const y=14+i*44; svg.append(s('text',{x:150,y:y+17,'text-anchor':'end','font-size':12},l)); svg.append(s('rect',{x:160,y,width:Math.max(1.5,v/mx*440),height:26,rx:3,fill:col})); svg.append(s('text',{x:166+v/mx*440,y:y+17,'font-size':12,'font-weight':600},v>=1?v.toFixed(2)+' ms':(v*1000).toFixed(0)+' µs')); });
+    const be=fl.get()*1e12*bpw/(2*bw.get()*1e12);
+    ro.innerHTML=`Pass time ≈ max(read, arithmetic) = <b>${Math.max(rd,ar).toFixed(2)} ms</b> for ${tk} token${tk>1?'s':''}. Arithmetic catches up with the weight read at about <b>${Math.round(be)}</b> tokens per pass (compute ÷ (2 × bandwidth / bytes per weight)). The slides’ case: 16 GB at 2 TB/s = 8 ms; 1 token 0.16 ms, 4 tokens 0.64 ms, 50 tokens 8 ms. Speculation and batching both spend this idle arithmetic.`; }
+  draw();
+});
+
+widget('sample-vs-check',(el)=>{
+  box(el,'Generating waits; checking does not','Top: sampling three tokens takes three passes, each waiting for the previous token. Bottom: when A, B, C are supplied, one causal pass returns every conditional at once.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%9; svg.setAttribute('viewBox','0 0 680 220'); svg.classList.add('chart'); svg.innerHTML='';
+    svg.append(s('text',{x:10,y:18,'font-size':12,'font-weight':600},'Generating'));
+    const toks=['A','B','C'];
+    for(let i=0;i<3;i++){ const x0=80+i*200, on=tt>i*1.6, done=tt>i*1.6+1.2;
+      svg.append(s('rect',{x:x0,y:30,width:172,height:46,rx:7,fill:on?(done?'#EEF1F4':'#F6E6E6'):'#fff',stroke:on&&!done?'#9B1C1C':'#9AA6B4','stroke-width':on&&!done?2.5:1.2}));
+      svg.append(s('text',{x:x0+86,y:50,'text-anchor':'middle','font-size':11},`pass ${i+1}: p(· | prefix${i?', '+toks.slice(0,i).join(', '):''})`));
+      if(done) svg.append(s('text',{x:x0+86,y:68,'text-anchor':'middle','font-size':13,'font-weight':700,fill:TOKC[toks[i]]},`Y${i+1} = ${toks[i]}`));
+      if(i<2) svg.append(s('text',{x:x0+186,y:57,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},'wait')); }
+    svg.append(s('text',{x:10,y:122,'font-size':12,'font-weight':600},'Checking'));
+    const on2=tt>.4, done2=tt>1.6;
+    svg.append(s('rect',{x:90,y:134,width:530,height:62,rx:8,fill:on2?(done2?'#E3F0EE':'#F6E6E6'):'#fff',stroke:on2&&!done2?'#9B1C1C':'#0F766E','stroke-width':on2&&!done2?2.5:1.5}));
+    svg.append(s('text',{x:355,y:152,'text-anchor':'middle','font-size':12},'one pass over prefix, A, B, C'));
+    ['p(·|prefix)','p(·|…, A)','p(·|…, A, B)','p(·|…, A, B, C)'].forEach((l,i)=>{ if(done2) svg.append(s('text',{x:150+i*130,y:180,'text-anchor':'middle','font-size':12,'font-weight':600,fill:'#0F766E'},l)); });
+    const timeGen=Math.min(3,Math.floor(Math.max(0,tt-.0)/1.6)+(tt>3*1.6?0:0)), passesGen=Math.min(3,Math.ceil(Math.max(0,tt-1.2)/1.6+ (tt>1.2?0:0)));
+    cap.innerHTML=done2&&tt>4.4? 'Three sequential passes versus one: the conditionals for supplied tokens all come from a single causal pass, exactly as in training (Lecture 2). This is what lets a target check a draft cheaply.' : 'Each generated token must exist before the next pass can start.'; });
+});
+
+widget('greedy-verify',(el)=>{
+  box(el,'Greedy verification: keep the matching prefix','Prefix “The capital of France is”. The drafter proposes four tokens; the target, in one pass, computes its most likely token at each position. Keep the draft up to the first mismatch, emit the target’s token there, discard the rest.');
+  const EX=[{draft:['Paris',',','which','is'],tgt:['Paris',',','a','·']},{draft:['Paris','.','It','is'],tgt:['Paris','.','It','has']},{draft:['Lyon',',','which','is'],tgt:['Paris',',','a','·']},{draft:['Paris',',','the','capital'],tgt:['Paris',',','the','capital','of']}];
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const k=Math.floor(t/6)%EX.length, tt=t%6, E=EX[k]; let m=0; while(m<E.draft.length&&E.draft[m]===E.tgt[m]) m++;
+    svg.setAttribute('viewBox','0 0 680 210'); svg.classList.add('chart'); svg.innerHTML=''; const x0=150, w=118;
+    [['draft (q)',30],['target’s most likely',90],['output',150]].forEach(([l,y])=>svg.append(s('text',{x:x0-12,y:y+20,'text-anchor':'end','font-size':12,'font-weight':600},l)));
+    E.draft.forEach((tok,i)=>{ const on=tt>.3+i*.3; if(!on) return; const disc=tt>3.2&&i>m; svg.append(s('rect',{x:x0+i*w,y:30,width:w-10,height:30,rx:5,fill:disc?'#F2F4F6':'#EEF1F4',stroke:'#9AA6B4'})); svg.append(s('text',{x:x0+i*w+(w-10)/2,y:50,'text-anchor':'middle','font-size':13,fill:disc?'#9AA6B4':'#1B2433','text-decoration':disc?'line-through':''},tok)); });
+    if(tt>1.8) E.tgt.slice(0,E.draft.length).forEach((tok,i)=>{ const match=tok===E.draft[i]; svg.append(s('rect',{x:x0+i*w,y:90,width:w-10,height:30,rx:5,fill:i<m?'#E3F0EE':i===m?'#F6E6E6':'#fff',stroke:i<m?'#0F766E':i===m?'#9B1C1C':'#D3D9E0'})); svg.append(s('text',{x:x0+i*w+(w-10)/2,y:110,'text-anchor':'middle','font-size':13,fill:i<=m?'#1B2433':'#9AA6B4'},tok)); if(i<=m) svg.append(s('text',{x:x0+i*w+(w-10)/2,y:83,'text-anchor':'middle','font-size':12,'font-weight':700,fill:match?'#0F766E':'#9B1C1C'},match?'✓':'✗')); });
+    if(tt>3.2){ const out=E.draft.slice(0,m).concat(m<E.draft.length?[E.tgt[m]]:(E.tgt[m]?[E.tgt[m]]:[])); out.forEach((tok,i)=>{ svg.append(s('rect',{x:x0+i*w,y:150,width:w-10,height:30,rx:5,fill:'#fff',stroke:'#1B2433','stroke-width':1.5})); svg.append(s('text',{x:x0+i*w+(w-10)/2,y:170,'text-anchor':'middle','font-size':13,'font-weight':600},tok)); }); }
+    const out=m+1; cap.innerHTML= tt>3.2? `Committed <b>${Math.min(out,E.draft.length+1)}</b> token${out>1?'s':''} from one target pass${m===E.draft.length?' (every proposal matched, plus the target’s next token)':m===0?' (the first proposal already disagreed; still one token, never zero)':''}. Greedy decoding reproduces the most likely text, not samples from p.` : 'Drafting, then one verification pass…'; });
+});
+
+widget('accept-rule',(el)=>{
+  box(el,'The acceptance rule and the residual','Set the target p and the draft q over three tokens (each row is renormalised). Bars: p (outline), q (filled), overlap min{p, q} (hatched). Then simulate the rule and compare the output with p.');
+  const P=[.6,.3,.1], Q=[.5,.2,.3]; const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  const ps=['A','B','C'].map((n,i)=>slider(c,{label:`p(${n})`,min:0,max:1,step:.01,value:P[i],fmt:v=>v.toFixed(2),oninput:v=>{P[i]=v;draw();}}));
+  const qs=['A','B','C'].map((n,i)=>slider(c2,{label:`q(${n})`,min:0,max:1,step:.01,value:Q[i],fmt:v=>v.toFixed(2),oninput:v=>{Q[i]=v;draw();}}));
+  const c3=h('div',{class:'ctrls'}); el.append(c3); let sim=null;
+  c3.append(h('button',{class:'btn primary',type:'button',onclick:()=>{ simulate(); draw(); }},'Simulate 10,000 proposals'), h('button',{class:'btn',type:'button',onclick:()=>{ [.6,.3,.1].forEach((v,i)=>{P[i]=v;ps[i].set(v);}); [.5,.2,.3].forEach((v,i)=>{Q[i]=v;qs[i].set(v);}); sim=null; draw(); }},'Slide values'));
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const nz=a=>{ const z=a.reduce((x,y)=>x+y,0)||1; return a.map(x=>x/z); };
+  function simulate(){ const p=nz(P), q=nz(Q); const al=p.reduce((a,x,i)=>a+Math.min(x,q[i]),0); const res=p.map((x,i)=>Math.max(0,x-q[i])/Math.max(1e-12,1-al)); const out=[0,0,0]; let acc=0;
+    for(let n=0;n<10000;n++){ const w=sampleFrom(q); if(Math.random()<=Math.min(1,p[w]/Math.max(q[w],1e-12))){ out[w]++; acc++; } else out[sampleFrom(res)]++; } sim={out:out.map(x=>x/10000),acc:acc/10000}; }
+  function draw(){ const p=nz(P), q=nz(Q); const al=p.reduce((a,x,i)=>a+Math.min(x,q[i]),0); const tv=.5*p.reduce((a,x,i)=>a+Math.abs(x-q[i]),0); const res=p.map((x,i)=>Math.max(0,x-q[i])/Math.max(1e-12,1-al)); const beta=p.map((x,i)=>q[i]>0?Math.min(1,x/q[i]):1);
+    svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML=''; const Y=v=>190-v*170;
+    const df=s('defs'); const pt=s('pattern',{id:'hatch',width:6,height:6,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'}); pt.append(s('rect',{width:6,height:6,fill:'#E3F0EE'})); pt.append(s('line',{x1:0,y1:0,x2:0,y2:6,stroke:'#0F766E','stroke-width':2})); df.append(pt); svg.append(df);
+    ['A','B','C'].forEach((n,i)=>{ const x=40+i*150;
+      svg.append(s('rect',{x,y:Y(q[i]),width:60,height:q[i]*170,fill:'#C9CED6'})); svg.append(s('rect',{x,y:Y(Math.min(p[i],q[i])),width:60,height:Math.min(p[i],q[i])*170,fill:'url(#hatch)'}));
+      svg.append(s('rect',{x,y:Y(p[i]),width:60,height:p[i]*170,fill:'none',stroke:'#9B1C1C','stroke-width':2}));
+      if(sim) svg.append(s('rect',{x:x+66,y:Y(sim.out[i]),width:22,height:sim.out[i]*170,fill:'#9B1C1C',opacity:.75}));
+      svg.append(s('text',{x:x+30,y:206,'text-anchor':'middle','font-size':13,'font-weight':700},n)); svg.append(s('text',{x:x+30,y:222,'text-anchor':'middle','font-size':11,fill:'#4A5568'},`β = ${beta[i].toFixed(2)}`)); });
+    svg.append(s('text',{x:500,y:30,'font-size':12,'font-weight':600},'residual p_res')); ['A','B','C'].forEach((n,i)=>{ svg.append(s('rect',{x:500,y:42+i*26,width:Math.max(1,res[i]*150),height:18,fill:'#B45309'})); svg.append(s('text',{x:506+res[i]*150,y:56+i*26,'font-size':11},`${n}: ${res[i].toFixed(2)}`)); });
+    ro.innerHTML=`α = Σ min{p, q} = <b>${al.toFixed(3)}</b> = 1 − TV (TV = ${tv.toFixed(3)}). Keep a proposal ω with probability β(ω) = min{1, p(ω)/q(ω)}; on rejection (probability ${(1-al).toFixed(2)}), draw from the residual.${sim?` <b>Simulated:</b> accepted ${(sim.acc*100).toFixed(1)}% of proposals; output frequencies (red thin bars) ${sim.out.map(x=>x.toFixed(3)).join(', ')} against p = ${p.map(x=>x.toFixed(3)).join(', ')}.`:''}`; }
+  draw();
+});
+
+widget('spec-round',(el)=>{
+  box(el,'One speculative round, start to finish','K = 4 over a toy vocabulary {A, B, C, D, E}. The drafter samples ξ₁…ξ₄ one at a time; one target pass gives p₁…p₅; each proposal is tested with U ≤ pᵢ(ξᵢ)/qᵢ(ξᵢ); the round ends at the first rejection (residual draw) or with a bonus token. A new round starts each loop.');
+  const V=['A','B','C','D','E']; const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  let cyc=-1, R, hist=[];
+  const mkDist=()=>{ const l=V.map(()=>randn()*1.3); return softmax(l); };
+  function makeRound(){ const K=4, q=[],p=[],xi=[],U=[],ratio=[]; for(let i=0;i<K;i++){ const pi=mkDist(); const qi=softmax(pi.map(x=>Math.log(x)+randn()*.6)); p.push(pi); q.push(qi); xi.push(sampleFrom(qi)); } p.push(mkDist());
+    let acc=0, zeta=null, rej=-1; for(let i=0;i<K;i++){ const u=Math.random(); U.push(u); const r=p[i][xi[i]]/q[i][xi[i]]; ratio.push(r); if(u<=Math.min(1,r)) acc++; else { const al=p[i].reduce((a,x,j)=>a+Math.min(x,q[i][j]),0); const res=p[i].map((x,j)=>Math.max(0,x-q[i][j])/Math.max(1e-12,1-al)); zeta=sampleFrom(res); rej=i; break; } }
+    if(rej<0) zeta=sampleFrom(p[K]); return {K,q,p,xi,U,ratio,acc,zeta,rej}; }
+  loopAnim(el,t=>{ const c=Math.floor(t/11); if(c!==cyc){ cyc=c; R=makeRound(); hist.push(R.acc+1); if(hist.length>40) hist.shift(); } const tt=t%11, {K,q,p,xi,U,ratio,acc,zeta,rej}=R;
+    svg.setAttribute('viewBox','0 0 680 300'); svg.classList.add('chart'); svg.innerHTML=''; const x0=135, w=100;
+    svg.append(s('text',{x:x0-10,y:44,'text-anchor':'end','font-size':12,'font-weight':600},'draft ξᵢ ∼ qᵢ'));
+    for(let i=0;i<K;i++){ if(tt<.4+i*.5) continue; const x=x0+i*w; svg.append(s('rect',{x,y:26,width:w-14,height:30,rx:5,fill:'#fff',stroke:'#9AA6B4'})); svg.append(s('text',{x:x+(w-14)/2,y:46,'text-anchor':'middle','font-size':14,'font-weight':700,fill:TOKC[V[xi[i]]]},V[xi[i]])); }
+    if(tt>2.6){ const on=tt<3.6; svg.append(s('rect',{x:x0-4,y:70,width:K*w+w-6,height:56,rx:8,fill:on?'#F6E6E6':'#EEF1F4',stroke:on?'#9B1C1C':'#9AA6B4','stroke-width':on?2.5:1.2})); svg.append(s('text',{x:x0-10,y:102,'text-anchor':'end','font-size':12,'font-weight':600},'one target pass'));
+      for(let i=0;i<=K;i++){ const x=x0+i*w; p[i].forEach((pv,j)=>svg.append(s('rect',{x:x+6+j*17,y:118-pv*44,width:14,height:pv*44,fill:TOKC[V[j]],opacity:.8}))); svg.append(s('text',{x:x+(w-14)/2,y:66,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},`p${i+1}`)); } }
+    svg.append(s('text',{x:x0-10,y:160,'text-anchor':'end','font-size':12,'font-weight':600},'test'));
+    const shown=Math.max(0,Math.floor((tt-3.8)/.8)+1);
+    for(let i=0;i<Math.min(shown,U.length);i++){ const x=x0+i*w, ok=i!==rej; svg.append(s('text',{x:x+(w-14)/2,y:148,'text-anchor':'middle','font-size':10.5},`U=${U[i].toFixed(2)}`)); svg.append(s('text',{x:x+(w-14)/2,y:162,'text-anchor':'middle','font-size':10.5},`p/q=${ratio[i].toFixed(2)}`)); svg.append(s('text',{x:x+(w-14)/2,y:182,'text-anchor':'middle','font-size':16,'font-weight':800,fill:ok?'#0F766E':'#9B1C1C'},ok?'✓ accept':'✗ reject')); }
+    const testsDone=tt>3.8+U.length*.8;
+    if(testsDone){ const zx=x0+(rej<0?K:rej)*w; svg.append(s('rect',{x:zx,y:192,width:w-14,height:30,rx:5,fill:'#FBF0E1',stroke:'#B45309','stroke-width':2})); svg.append(s('text',{x:zx+(w-14)/2,y:212,'text-anchor':'middle','font-size':14,'font-weight':700,fill:TOKC[V[zeta]]},`ζ = ${V[zeta]}`)); svg.append(s('text',{x:zx+(w-14)/2,y:236,'text-anchor':'middle','font-size':10.5,fill:'#B45309'},rej<0?'bonus from p₅':'from the residual'));
+      svg.append(s('text',{x:x0-10,y:272,'text-anchor':'end','font-size':12,'font-weight':600},'KV cache'));
+      for(let i=0;i<K;i++){ const x=x0+i*w, keep=rej<0||i<rej; svg.append(s('rect',{x,y:256,width:w-14,height:24,rx:4,fill:keep?'#E3F0EE':'#F2F4F6',stroke:keep?'#0F766E':'#C9CED6','stroke-dasharray':keep?'':'4 3'})); svg.append(s('text',{x:x+(w-14)/2,y:272,'text-anchor':'middle','font-size':11,fill:keep?'#0F766E':'#9AA6B4'},keep?`keep ${V[xi[i]]}`:'discard')); } }
+    const avg=hist.reduce((a,b)=>a+b,0)/hist.length;
+    cap.innerHTML= tt<2.6? 'Drafting: the cheap drafter samples one token at a time.' : tt<3.8? 'Verification: one target pass over the prefix and all four proposals returns p₁ … p₅.' : !testsDone? 'Testing each proposal in order; the round stops at the first rejection.' : `Committed <b>${acc+1}</b> token${acc?'s':''}: ${xi.slice(0,acc).map(i=>V[i]).concat([V[zeta]]).join(' ')}. ${rej<0?'All four accepted, plus a bonus token: the maximum, K + 1 = 5.':`Rejected at position ${rej+1}: its cache entries and everything after are discarded; ζ’s entries come with the next pass.`} Average over the last ${hist.length} rounds: ${avg.toFixed(2)} tokens.`; });
+});
+
+widget('tokens-round',(el)=>{
+  box(el,'Tokens per round: the tail sum','Position i + 1 is filled only if the first i proposals were all accepted, with probability αⁱ. Summing gives 𝔼 = 1 + α + ⋯ + α^K.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const a=slider(c,{label:'α',min:.1,max:.99,step:.01,value:.8,fmt:v=>v.toFixed(2),oninput:draw});
+  const K=slider(c,{label:'K',min:1,max:12,step:1,value:4,oninput:draw});
+  function draw(){ const al=a.get(), k=K.get(); svg.setAttribute('viewBox','0 0 680 200'); svg.classList.add('chart'); svg.innerHTML=''; const bw=Math.min(52,600/(k+1));
+    for(let i=0;i<=k;i++){ const v=al**i, x=40+i*bw; svg.append(s('rect',{x,y:170-v*140,width:bw-6,height:v*140,fill:i===0?'#B45309':'#0F766E',opacity:.9})); svg.append(s('text',{x:x+(bw-6)/2,y:164-v*140,'text-anchor':'middle','font-size':10.5},v.toFixed(2))); svg.append(s('text',{x:x+(bw-6)/2,y:186,'text-anchor':'middle','font-size':10.5},i===0?'1st':`${i+1}`)); }
+    const sims=[...Array(k+2)].fill(0); for(let n=0;n<4000;n++){ let c0=1; for(let i=0;i<k;i++){ if(Math.random()<al) c0++; else break; } sims[c0]++; }
+    const E=(1-al**(k+1))/(1-al); const meanSim=sims.reduce((acc,v,i)=>acc+v*i,0)/4000;
+    ro.innerHTML=`𝔼[tokens per round] = (1 − α<sup>K+1</sup>)/(1 − α) = <b>${E.toFixed(3)}</b>; simulated over 4,000 rounds: ${meanSim.toFixed(3)}. The orange bar is the fresh token (residual draw or bonus), always committed. Distribution of committed tokens: ${sims.slice(1).map((v,i)=>`${i+1}: ${(v/40).toFixed(0)}%`).join(', ')}.`; }
+  draw();
+});
+
+widget('speedup-k',(el)=>{
+  box(el,'How long should the draft be?','speedup ≈ 𝔼[tokens per round] / (K × draft cost + verification cost), with costs in units of one ordinary target step.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const a=slider(c,{label:'α',min:.3,max:.98,step:.01,value:.8,fmt:v=>v.toFixed(2),oninput:draw});
+  const dc=slider(c,{label:'Draft cost per token',min:0,max:.3,step:.005,value:.05,fmt:v=>v.toFixed(3),oninput:draw});
+  const vc=slider(c,{label:'Verification cost',min:1,max:2,step:.05,value:1,fmt:v=>v.toFixed(2),oninput:draw});
+  function draw(){ const al=a.get(); const sp=K=>(1-al**(K+1))/(1-al)/(K*dc.get()+vc.get()); const pts=[...Array(20).keys()].map(i=>[i+1,sp(i+1)]); const best=pts.reduce((x,y)=>y[1]>x[1]?y:x);
+    chart(svg,{w:640,h:250,x:{min:0,max:20,label:'draft length K'},y:{min:0,max:Math.max(2,best[1]*1.25),label:'predicted speedup'},series:[{pts:[[0,1],[20,1]],color:'#9AA6B4',dash:'4 4'},{pts,color:'#9B1C1C'}],marks:[{x:best[0],y:best[1],label:`best K = ${best[0]}: ${best[1].toFixed(2)}×`}]});
+    ro.innerHTML=`With the slides’ assumptions (α = 0.8, draft 0.05, verification 1): 1.71× at K = 1, 2.80× at K = 4, best 3.09× at K = 8, 2.72× at K = 16. Now: K = 1 gives ${sp(1).toFixed(2)}×, best ${best[1].toFixed(2)}× at K = ${best[0]}. Each extra proposal adds only α<sup>K+1</sup> expected tokens while drafting cost keeps growing. Below 1× (dashed), speculation loses.`; }
+  draw();
+});
+
+const TREE={nodes:[{id:0,tok:'',par:-1},{id:1,tok:'A',par:0},{id:2,tok:'B',par:0},{id:3,tok:'A',par:1},{id:4,tok:'B',par:1},{id:5,tok:'A',par:2},{id:6,tok:'B',par:2}]};
+const treePos={0:[80,110],1:[250,60],2:[250,160],3:[420,30],4:[420,90],5:[420,135],6:[420,190]};
+widget('tree-mask',(el)=>{
+  box(el,'Tree attention: one pass checks every branch','Six candidate nodes. Select a node: it may attend to the prefix, its ancestors and itself, never another branch. The mask (right) shows every node’s row.');
+  let sel=4; const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const anc=i=>{ const a=[]; let c=i; while(c>0){ a.push(c); c=TREE.nodes[c].par; } return a; };
+  function draw(){ svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML=''; const A=anc(sel);
+    TREE.nodes.slice(1).forEach(n=>{ const [x1,y1]=treePos[n.par],[x2,y2]=treePos[n.id]; svg.append(s('line',{x1,y1,x2,y2,stroke:A.includes(n.id)?'#9B1C1C':'#C9CED6','stroke-width':A.includes(n.id)?3:1.5})); });
+    TREE.nodes.forEach(n=>{ const [x,y]=treePos[n.id]; const g=s('g',{style:n.id?'cursor:pointer':'',tabindex:n.id?0:-1}); const on=n.id===0||A.includes(n.id);
+      g.append(s('circle',{cx:x,cy:y,r:n.id?17:24,fill:on?(n.id===sel?'#9B1C1C':'#F6E6E6'):'#fff',stroke:on?'#9B1C1C':'#9AA6B4','stroke-width':1.8}));
+      g.append(s('text',{x,y:y+4,'text-anchor':'middle','font-size':n.id?12:11,'font-weight':700,fill:n.id===sel?'#fff':'#1B2433'},n.id?`${n.id}:${n.tok}`:'prefix'));
+      if(n.id){ g.addEventListener('click',()=>{sel=n.id;draw();}); g.addEventListener('keydown',e=>{if(e.key==='Enter'){sel=n.id;draw();}}); } svg.append(g); });
+    const mx=490, cs=24; ['p',1,2,3,4,5,6].forEach((l,j)=>svg.append(s('text',{x:mx+j*cs+cs/2,y:22,'text-anchor':'middle','font-size':11},l)));
+    for(let r=1;r<=6;r++){ const ar=anc(r); svg.append(s('text',{x:mx-6,y:30+r*cs-6,'text-anchor':'end','font-size':11,'font-weight':r===sel?700:400},r));
+      for(let j=0;j<=6;j++){ const ok=j===0||ar.includes(j); svg.append(s('rect',{x:mx+j*cs+1,y:30+(r-1)*cs+1,width:cs-2,height:cs-2,fill:ok?(r===sel?'#9B1C1C':'#0F766E'):'#F2F4F6',opacity:ok?(r===sel?1:.6):1})); } }
+    ro.innerHTML=`Node ${sel} (${TREE.nodes[sel].tok}) sees: prefix, ${anc(sel).reverse().map(i=>`${i}:${TREE.nodes[i].tok}`).join(' → ')}. All six candidate prefixes are scored in one target pass, each with the right history.`; }
+  draw();
+});
+
+widget('tree-sampler',(el)=>{
+  box(el,'An exact sampler on a fixed tree','At the current node, draw a token from the target. If it is a child in the tree, emit it and move there; otherwise emit it and stop. At a leaf, draw once more and stop. Toy target over {A, B, C}; new draws each loop.');
+  const V=['A','B','C']; const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap); let cyc=-1, run, hist=[];
+  function doRun(){ const P={}; TREE.nodes.forEach(n=>{ P[n.id]=softmax([randn()*1.2+.6,randn()*1.2+.4,randn()*1.2-.4]); }); let cur=0; const steps=[];
+    while(true){ const d=sampleFrom(P[cur]); const kids=TREE.nodes.filter(n=>n.par===cur); const hit=kids.find(n=>n.tok===V[d]); steps.push({at:cur,tok:V[d],to:hit?hit.id:null}); if(hit){ cur=hit.id; if(!TREE.nodes.some(n=>n.par===cur)){ const d2=sampleFrom(P[cur]); steps.push({at:cur,tok:V[d2],to:null,leaf:true}); break; } } else break; }
+    return {steps}; }
+  loopAnim(el,t=>{ const c=Math.floor(t/7); if(c!==cyc){ cyc=c; run=doRun(); hist.push(run.steps.length); if(hist.length>40) hist.shift(); } const tt=t%7, k=Math.min(run.steps.length,Math.floor(tt/1.3));
+    svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML='';
+    const path=[0]; run.steps.slice(0,k).forEach(st=>{ if(st.to!=null) path.push(st.to); });
+    TREE.nodes.slice(1).forEach(n=>{ const [x1,y1]=treePos[n.par],[x2,y2]=treePos[n.id]; const on=path.includes(n.id); svg.append(s('line',{x1,y1,x2,y2,stroke:on?'#0F766E':'#C9CED6','stroke-width':on?3.5:1.5})); });
+    TREE.nodes.forEach(n=>{ const [x,y]=treePos[n.id]; const on=path.includes(n.id); svg.append(s('circle',{cx:x,cy:y,r:n.id?17:24,fill:on?'#E3F0EE':'#fff',stroke:on?'#0F766E':'#9AA6B4','stroke-width':1.8})); svg.append(s('text',{x,y:y+4,'text-anchor':'middle','font-size':n.id?12:11,'font-weight':700},n.id?n.tok:'prefix')); });
+    const out=run.steps.slice(0,k).map(st=>st.tok);
+    svg.append(s('text',{x:500,y:40,'font-size':12,'font-weight':600},'emitted'));
+    out.forEach((tok,i)=>{ const last=i===run.steps.length-1; svg.append(s('rect',{x:500+i*44,y:52,width:38,height:30,rx:5,fill:last&&k===run.steps.length?'#FBF0E1':'#fff',stroke:last&&k===run.steps.length?'#B45309':'#1B2433'})); svg.append(s('text',{x:519+i*44,y:72,'text-anchor':'middle','font-size':14,'font-weight':700,fill:TOKC[tok]},tok)); });
+    if(k>0&&k<=run.steps.length){ const st=run.steps[k-1]; const [x,y]=treePos[st.at]; svg.append(s('text',{x:x,y:y<50?y+34:y-26,'text-anchor':'middle','font-size':11,'font-weight':600,fill:'#9B1C1C'},`draw ${st.tok}`)); }
+    const avg=hist.reduce((a,b)=>a+b,0)/hist.length;
+    cap.innerHTML= k<run.steps.length? `Step ${k+1}: draw from the target at the current node…` : `${out.length} token${out.length>1?'s':''} this round (${run.steps[run.steps.length-1].leaf?'reached a leaf, drew once more':'drew a token that is not a child, so stopped'}). Every token came from the target at its true history, so the law is exact. Average over the last ${hist.length} rounds: ${avg.toFixed(2)}.`; });
+});
+
+widget('sequoia-dp',(el)=>{
+  box(el,'Sequoia: the best tree for a budget of n nodes','Assume the k-th child of an accepted node is accepted with probability ψₖ, whatever the context. The dynamic programme V(n, b) = max over m of [V(n − m, b − 1) + ψ_b · max_j V(m, j)] finds the tree with the most expected tokens per round.');
+  const psi=[.6,.2,.08,.04]; const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  psi.forEach((v,i)=>slider(c,{label:`ψ${i+1}`,min:0,max:1,step:.01,value:v,fmt:x=>x.toFixed(2),oninput:x=>{psi[i]=x;draw();}}));
+  const n=slider(c2,{label:'Node budget n (root included)',min:2,max:30,step:1,value:12,oninput:draw});
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function solve(N){ const Bm=psi.length; const V=[...Array(N+1)].map(()=>Array(Bm+1).fill(-Infinity)), arg=[...Array(N+1)].map(()=>Array(Bm+1).fill(null)); V[1][0]=1;
+    const best=m=>{ let bv=-Infinity,bj=0; for(let j=0;j<=Bm;j++) if(V[m][j]>bv){bv=V[m][j];bj=j;} return [bv,bj]; };
+    for(let nn=2;nn<=N;nn++) for(let b=1;b<=Bm;b++) for(let m=1;m<nn;m++){ if(V[nn-m][b-1]===-Infinity) continue; const [bv,bj]=best(m); const v=V[nn-m][b-1]+psi[b-1]*bv; if(v>V[nn][b]){ V[nn][b]=v; arg[nn][b]=[m,bj]; } }
+    const build=(nn,b)=>{ const kids=[]; let cn=nn, cb=b; while(cb>0){ const [m,bj]=arg[cn][cb]; kids.unshift({...build(m,bj),rank:cb}); cn-=m; cb--; } return {kids}; };
+    let bv=-Infinity,bb=0; for(let b=0;b<=Bm;b++) if(V[N][b]>bv){bv=V[N][b];bb=b;} return {val:bv,tree:build(N,bb)}; }
+  function draw(){ const N=n.get(); const {val,tree}=solve(N); const chain=1+[...Array(N-1).keys()].reduce((a,k)=>a+psi[0]**(k+1),0);
+    svg.setAttribute('viewBox','0 0 680 250'); svg.classList.add('chart'); svg.innerHTML='';
+    let leaf=0; const pos=[]; const depthOf=[]; (function lay(nd,d){ if(!nd.kids.length){ nd.x=leaf++; } else { nd.kids.forEach(k=>lay(k,d+1)); nd.x=(nd.kids[0].x+nd.kids[nd.kids.length-1].x)/2; } nd.d=d; depthOf.push(d); })(tree,0);
+    const maxD=Math.max(...depthOf), L=Math.max(1,leaf-1); const X=nd=>40+nd.d/(Math.max(1,maxD))*600, Y=nd=>20+(leaf>1?nd.x/L*210:105);
+    (function dr(nd,acc){ nd.kids.forEach(k=>{ const pa=acc*psi[k.rank-1]; svg.append(s('line',{x1:X(nd),y1:Y(nd),x2:X(k),y2:Y(k),stroke:'#9AA6B4','stroke-width':1+3*pa})); dr(k,pa); }); svg.append(s('circle',{cx:X(nd),cy:Y(nd),r:nd.d?7:10,fill:nd.d?`rgba(15,118,110,${.25+.75*acc})`:'#1B2433'})); })(tree,1);
+    ro.innerHTML=`Best tree with ${N} nodes: <b>${val.toFixed(3)}</b> expected tokens per round. A single chain of the same size: ${chain.toFixed(3)}. ${val>chain+1e-9?`The tree wins by ${((val/chain-1)*100).toFixed(1)}%: alternatives at the first steps are worth more than a long bet on one continuation.`:'With ψ₂, ψ₃, … this small, a chain is already optimal.'} Edge width and node shade show each node’s acceptance probability (the product of ψ’s along its path).`; }
+  draw();
+});
+
+widget('prompt-lookup',(el)=>{
+  box(el,'Drafting from text that already exists','Prompt lookup: find the latest few output tokens earlier in the context, and propose what followed them. No draft model runs; it pays when text repeats.');
+  const ctx='Earlier: the cat sat on the mat and the dog slept by the door .'.split(' '); const now='Now: later that day the cat'.split(' ');
+  const draft=['sat','on','the','mat'], tgt=['sat','on','the','sofa'];
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%9; svg.setAttribute('viewBox','0 0 680 200'); svg.classList.add('chart'); svg.innerHTML='';
+    let x=10; ctx.forEach((w,i)=>{ const hit=tt>1.5&&(i===1||i===2), prop=tt>2.8&&i>=3&&i<=6; const wd=w.length*8+14; svg.append(s('rect',{x,y:20,width:wd,height:26,rx:4,fill:hit?'#F6E6E6':prop?'#E3F0EE':'#fff',stroke:hit?'#9B1C1C':prop?'#0F766E':'#E6EAEE'})); svg.append(s('text',{x:x+wd/2,y:38,'text-anchor':'middle','font-size':12.5,'font-weight':i===0?700:400},w)); x+=wd+4; });
+    x=10; now.forEach((w,i)=>{ const hit=tt>1.5&&i>=now.length-2; const wd=w.length*8+14; svg.append(s('rect',{x,y:80,width:wd,height:26,rx:4,fill:hit?'#F6E6E6':'#fff',stroke:hit?'#9B1C1C':'#E6EAEE'})); svg.append(s('text',{x:x+wd/2,y:98,'text-anchor':'middle','font-size':12.5,'font-weight':i===0?700:400},w)); x+=wd+4; });
+    const dx=x+6; if(tt>3.6) draft.forEach((w,i)=>{ const v=tt>5.2, ok=w===tgt[i]; const wd=w.length*8+14, xx=dx+i*58; svg.append(s('rect',{x:xx,y:80,width:wd,height:26,rx:4,fill:v?(ok?'#E3F0EE':'#F6E6E6'):'#F2F4F6',stroke:v?(ok?'#0F766E':'#9B1C1C'):'#9AA6B4','stroke-dasharray':v?'':'4 3'})); svg.append(s('text',{x:xx+wd/2,y:98,'text-anchor':'middle','font-size':12.5,fill:'#4A5568','text-decoration':v&&!ok?'line-through':''},w)); if(v&&!ok){ svg.append(s('text',{x:xx+wd/2,y:128,'text-anchor':'middle','font-size':12.5,'font-weight':700,fill:'#9B1C1C'},'sofa')); } });
+    if(tt>5.2) svg.append(s('text',{x:10,y:170,'font-size':12,fill:'#4A5568'},'Target pass: “sat on the” accepted; “mat” rejected, replaced by the target’s own token “sofa”. 4 tokens committed from one pass.'));
+    cap.innerHTML= tt<1.5? 'The output so far ends with “the cat”.' : tt<2.8? 'Match: “the cat” occurred earlier in the context.' : tt<3.6? 'What followed it there: “sat on the mat”.' : tt<5.2? 'Propose it as the draft. Its law q is a point mass, so any token the target gives probability p(ω) is accepted with probability p(ω).' : 'Verification keeps the target’s distribution exactly, whatever the draft source.'; });
+});
+
+widget('heads-anim',(el)=>{
+  box(el,'Medusa, EAGLE and MTP: drafting from the target’s own hidden state','Left: Medusa heads all read the same hidden state φₜ and predict future positions in parallel. Right: EAGLE (and DeepSeek-V3’s MTP module) feeds each chosen token back with the hidden state, advancing one step at a time.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%6; svg.setAttribute('viewBox','0 0 680 250'); svg.classList.add('chart'); svg.innerHTML='';
+    const bx=(x,y,w,hh,l,on,col='#9B1C1C')=>{ svg.append(s('rect',{x,y,width:w,height:hh,rx:6,fill:on?col+'22':'#fff',stroke:on?col:'#9AA6B4','stroke-width':on?2.5:1.2})); svg.append(s('text',{x:x+w/2,y:y+hh/2+4,'text-anchor':'middle','font-size':11.5,'font-weight':600},l)); };
+    const ln=(x1,y1,x2,y2,on)=>svg.append(s('line',{x1,y1,x2,y2,stroke:on?'#9B1C1C':'#C9CED6','stroke-width':on?2.5:1.3}));
+    svg.append(s('text',{x:10,y:16,'font-size':13,'font-weight':700},'Medusa')); svg.append(s('text',{x:350,y:16,'font-size':13,'font-weight':700},'EAGLE / MTP'));
+    const m1=tt>.6;
+    bx(10,105,90,40,'target → φₜ',tt>.1,'#1B2433');
+    [['output head',30,'ωₜ₊₁'],['Medusa head 1',105,'ξₜ₊₂'],['Medusa head 2',180,'ξₜ₊₃']].forEach(([l,y,o])=>{ ln(100,125,140,y+18,m1); bx(140,y,110,36,l,m1); if(tt>1.2){ svg.append(s('text',{x:270,y:y+23,'font-size':13,'font-weight':700,fill:'#9B1C1C'},o)); } });
+    const st=[[.4,'φₜ'],[1.4,'head → ωₜ₊₁'],[2.2,'layer(φₜ, emb ωₜ₊₁) → φ̂ₜ₊₁'],[3.0,'head → ξₜ₊₂'],[3.8,'layer(φ̂ₜ₊₁, emb ξₜ₊₂) → φ̂ₜ₊₂'],[4.6,'head → ξₜ₊₃']];
+    st.forEach(([t0,l],i)=>{ const y=30+i*35; bx(360,y,300,28,l,tt>t0,i%2?'#0F766E':'#B45309'); if(i) ln(510,y-7,510,y,tt>t0); });
+    cap.innerHTML= tt<2? 'Medusa: one hidden state, several heads at once. Cheap, but head 2 does not know what head 1 chose.' : 'EAGLE: one decoder layer reused step by step, each step seeing the previous chosen token. DeepSeek-V3’s MTP module has the same causal chain (one transformer block, shared output head), trained jointly with the backbone and reused as a drafter at inference.'; });
+});
+
+widget('request-time',(el)=>{
+  box(el,'Find the dominant cost first','request time ≈ time to first token (queueing + prefill) + (output tokens − 1) × time per output token. Speculation shortens only the second part.');
+  const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const q=slider(c,{label:'Queueing + prefill (s)',min:0,max:5,step:.1,value:2,fmt:v=>v.toFixed(1),oninput:draw});
+  const n=slider(c,{label:'Output tokens',min:1,max:2000,step:1,value:101,oninput:draw});
+  const tp=slider(c2,{label:'Time per output token (ms)',min:2,max:60,step:1,value:10,oninput:draw});
+  const sp=slider(c2,{label:'Decoding speedup',min:1,max:4,step:.1,value:2,fmt:v=>v.toFixed(1)+'×',oninput:draw});
+  function draw(){ const a=q.get(), d=(n.get()-1)*tp.get()/1000, d2=d/sp.get(); const mx=(a+d)*1.05;
+    svg.setAttribute('viewBox','0 0 640 110'); svg.classList.add('chart'); svg.innerHTML='';
+    [['as is',d],['with speculation',d2]].forEach(([l,dd],i)=>{ const y=14+i*44; svg.append(s('text',{x:120,y:y+17,'text-anchor':'end','font-size':12},l)); svg.append(s('rect',{x:130,y,width:a/mx*440,height:26,fill:'#64748B'})); svg.append(s('rect',{x:130+a/mx*440,y,width:dd/mx*440,height:26,fill:'#9B1C1C'})); svg.append(s('text',{x:136+(a+dd)/mx*440,y:y+17,'font-size':12,'font-weight':600},(a+dd).toFixed(2)+' s')); });
+    ro.innerHTML=`Grey: queueing + prefill ${a.toFixed(1)} s. Red: decoding ${d.toFixed(2)} s → ${d2.toFixed(2)} s. End to end <b>${((a+d)/(a+d2)).toFixed(2)}×</b> faster, not ${sp.get().toFixed(1)}×. The slides’ example: 2 s + 1 s, decoding halved, gives 2.5 s, not 1.5 s.`; }
+  draw();
+});
+
+widget('prefix-cache',(el)=>{
+  box(el,'Prefix caching','Three requests share a system prompt and a document, then ask different questions. Without caching, each request recomputes the shared prefix; with it, the prefix’s keys and values are computed once and reused.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap); const P=8, Qs=[1.2,.8,1.5];
+  loopAnim(el,t=>{ const tt=t%10, cached=Math.floor(t/10)%2===1; svg.setAttribute('viewBox','0 0 680 204'); svg.classList.add('chart'); svg.innerHTML=''; const sc=50;
+    svg.append(s('text',{x:10,y:16,'font-size':13,'font-weight':700,fill:cached?'#0F766E':'#9B1C1C'},cached?'With prefix caching':'Without prefix caching'));
+    let work=0, done=0; const speed=2.4;
+    Qs.forEach((q,i)=>{ const y=46+i*48; const pre=cached&&i>0?0:P; const tot=pre+q; const start=Qs.slice(0,i).reduce((a,qq,j)=>a+(cached&&j>0?0:P)+qq,0); const prog=Math.max(0,Math.min(tot,(tt*speed)-start)); work+=tot; done+=prog;
+      svg.append(s('text',{x:10,y:y+22,'font-size':12},`request ${i+1}`));
+      svg.append(s('rect',{x:90,y,width:P*sc*.6,height:30,rx:4,fill:'none',stroke:cached&&i>0?'#0F766E':'#9AA6B4','stroke-dasharray':cached&&i>0?'4 3':''}));
+      if(cached&&i>0) svg.append(s('text',{x:90+P*sc*.3,y:y+20,'text-anchor':'middle','font-size':11,fill:'#0F766E'},'reused from cache'));
+      svg.append(s('rect',{x:90,y,width:Math.min(pre,prog)*sc*.6,height:30,rx:4,fill:'#64748B'}));
+      svg.append(s('rect',{x:90+P*sc*.6,y,width:q*sc*.6,height:30,rx:4,fill:'none',stroke:'#9B1C1C'}));
+      svg.append(s('rect',{x:90+P*sc*.6,y,width:Math.max(0,prog-pre)*sc*.6,height:30,rx:4,fill:'#9B1C1C'}));
+      if(i===0) svg.append(s('text',{x:90+P*sc*.3,y:y-4,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},'system prompt + document')); });
+    cap.innerHTML=`Prompt work: <b>${work.toFixed(1)}</b> units ${cached?`instead of ${(3*P+Qs.reduce((a,b)=>a+b,0)).toFixed(1)}`:''}. ${cached?'The shared prefix is evaluated once; each later request only processes its own question.':'Each request pays for the long shared prefix again.'} The loop alternates the two.`; });
+});
+
+widget('paged-kv',(el)=>{
+  box(el,'PagedAttention: fixed-size cache blocks, allocated on demand','Three requests of different lengths. Reserving a maximum length per request wastes the unused slots; paging allocates blocks only as tokens arrive.');
+  const L=[3,7,9]; const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2); let bs=4;
+  L.forEach((v,i)=>slider(c,{label:`request ${i+1} length`,min:1,max:16,step:1,value:v,oninput:x=>{L[i]=x;draw();}}));
+  const res=slider(c2,{label:'Reserved per request',min:8,max:32,step:1,value:16,oninput:draw});
+  seg(c2,[1,2,4,8].map(b=>({label:'blocks of '+b,value:b})),4,v=>{bs=v;draw();},'Paging');
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function draw(){ const R=Math.max(res.get(),...L); svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML=''; const cs=Math.min(17,300/R);
+    svg.append(s('text',{x:10,y:16,'font-size':12,'font-weight':600},`Reserve ${R} each`)); svg.append(s('text',{x:350,y:16,'font-size':12,'font-weight':600},`Paged, blocks of ${bs}`));
+    let held1=0, held2=0;
+    L.forEach((n,i)=>{ const y=34+i*62; for(let j=0;j<R;j++){ svg.append(s('rect',{x:10+j*cs,y,width:cs-2,height:22,fill:j<n?'#0F766E':'#F6E6E6',stroke:j<n?'#0F766E':'#E8B3B3'})); } held1+=R;
+      const nb=Math.ceil(n/bs); for(let b=0;b<nb;b++) for(let k=0;k<bs;k++){ const j=b*bs+k; svg.append(s('rect',{x:350+j*cs+b*4,y,width:cs-2,height:22,fill:j<n?'#0F766E':'#F6E6E6',stroke:j<n?'#0F766E':'#E8B3B3'})); } held2+=nb*bs;
+      svg.append(s('text',{x:10,y:y+38,'font-size':10.5,fill:'#4A5568'},`request ${i+1}: ${n} tokens`)); });
+    const used=L.reduce((a,b)=>a+b,0);
+    ro.innerHTML=`Tokens actually stored: ${used}. Reserved: <b>${held1}</b> slots held (${((1-used/held1)*100).toFixed(0)}% wasted). Paged: <b>${held2}</b> slots (${((1-used/held2)*100).toFixed(0)}% wasted, only in each request’s last block). The slides’ case: lengths 3, 7, 9, reserve 16 → 48 held; blocks of 4 → 24. Less waste means more requests share each weight read.`; }
   draw();
 });
 </script>
