@@ -215,8 +215,8 @@ details.key{max-width:1000px}
 details.key>summary{color:var(--ink)}
 details.key table.t td{vertical-align:top;font-size:.86rem}
 details.sol>div,details.hint>div{padding:0 1.1rem .8rem;border-top:1px solid var(--rule)}
-.fix{border-left:3px solid var(--hi);background:#FBF5E1;padding:.5rem .9rem;margin:.8rem 0;border-radius:0 6px 6px 0}
-.fix::before{content:"Note on the write-up";display:block;font-family:var(--sans);font-size:.78rem;font-weight:600;color:#8A6A00}
+div.fix{border-left:3px solid var(--hi);background:#FBF5E1;padding:.5rem .9rem;margin:.8rem 0;border-radius:0 6px 6px 0}
+div.fix::before{content:"Note on the write-up";display:block;font-family:var(--sans);font-size:.78rem;font-weight:600;color:#8A6A00}
 /* quiz */
 .quiz .q{margin:1rem 0 1.4rem}
 .quiz .q p{margin:.2rem 0 .5rem;font-family:var(--serif);font-size:1.02rem}
@@ -296,8 +296,7 @@ const COURSE = {
     {part:'I',  title:'Multi-token prediction', note:'Supervise several future positions; is the gain worth the compute?'},
     {part:'II', title:'FlashAttention', note:'Dense attention with less memory traffic (linear attention is covered in Lecture 7).'},
     {part:'III',title:'Learned cache compression', note:'Train a compact representation of a reusable corpus.'},
-    {part:'IV', title:'Supervised fine-tuning and LoRA', note:'Curated examples; low-rank trainable updates.'},
-    {part:'IV', title:'Learning from preferences', note:'Reward models and policy optimisation, or direct preference training.'},
+    {part:'IV', title:'PPO and direct preference optimisation (DPO)', note:'Controlled policy-gradient updates; training directly on preference pairs (reward models and RLHF are in Lecture 11).'},
     {part:'IV', title:'Distillation and self-distillation', note:'Teacher targets; filtered self-generated data (STaR).'},
     {part:'IV', title:'Recursive improvement', note:'When models generate, judge and refine their own data.'},
     {part:'V',  title:'Jailbreaking as adaptive search', note:'GCG, PAIR, TAP; robustness as a curve over attacker budget.'},
@@ -423,7 +422,7 @@ const COMPONENTS = {
   mlp:  {name:'MLP', color:'#B45309', text:'Acts on each token separately and holds most of the weights. A mixture of experts replaces it with many MLPs and a router; quantization stores its weights in fewer bits.', lectures:['l2','l4','l9']},
   resid:{name:'Residual stream', color:'#1B2433', text:'Each sublayer adds an update; information and gradients can bypass every sublayer.', lectures:['l2']},
   head: {name:'Vocabulary projection and softmax', color:'#64748B', text:'The last position’s vector becomes scores over the vocabulary, then probabilities. Speculative decoding samples from these probabilities exactly while checking several drafted tokens per pass.', lectures:['l2','l10']},
-  optim:{name:'Training: loss, gradients, optimizer', color:'#9B1C1C', text:'Next-token log loss, backpropagation, then an update rule: SGD, Adam, Muon.', lectures:['l2','l3']},
+  optim:{name:'Training: loss, gradients, optimizer', color:'#9B1C1C', text:'Next-token log loss, backpropagation, then an update rule: SGD, Adam, Muon. Post-training reuses the loop on demonstrations (SFT), low-rank updates (LoRA) and reward-weighted samples (RLHF).', lectures:['l2','l3','l11']},
   scale:{name:'Scale: parameters N, tokens D', color:'#9B1C1C', text:'Training compute C ≈ 6ND. Scaling laws decide how to split it.', lectures:['l1','l2']}
 };
 function archSVG({highlight=null, interactive=false, animate=false}={}){
@@ -864,7 +863,7 @@ function renderMidterm(app){
     ${COURSE.parts.map(p=>{ const ls=Ls.filter(L=>L.part===p.id); if(!ls.length) return ''; return `<section><div class="prose"><h2>Part ${p.id}: ${p.title}</h2></div><div class="mt-grid">${ls.map(card).join('')}</div></section>`; }).join('')}
     <section><div class="prose"><h2>Ten-second self-test</h2><p class="small">One question per lecture. Answer in your head, then open it.</p></div>
       <div class="mt-quiz">${Ls.filter(L=>L.quiz&&L.quiz.length).map(L=>{ const q=L.quiz[0]; return `<details><summary><b>L${L.number}.</b> ${q.q}</summary><div><p><b>${q.options[q.answer]}</b></p><p class="small">${q.why}</p></div></details>`; }).join('')}</div></section>
-    ${COURSE.assignments.length?`<section><div class="prose"><h2>Homework to revisit</h2><ul>${COURSE.assignments.flatMap(A=>A.problems.map(P=>`<li><a href="#/hw/${A.id}/${P.id}">HW${A.number} ${P.title.replace(/\s*\([^()]*points?[^()]*\)\s*$/,'')}</a>: ${P.blurb}</li>`)).join('')}</ul></div></section>`:''}`;
+    ${COURSE.assignments.length?`<section><div class="prose"><h2>Homework to revisit</h2><ul>${COURSE.assignments.map(A=>`<li><a href="#/hw/${A.id}"><b>HW${A.number}</b></a>: ${A.problems.map(P=>`<a href="#/hw/${A.id}/${P.id}">${P.title.replace(/\s*\([^()]*points?[^()]*\)\s*$/,'').replace(/^Problem\s*/,'P').replace(/:.*$/,'')}</a>`).join(' · ')}</li>`).join('')}</ul></div></section>`:''}`;
   renderMath(app);
   const clone=app.cloneNode(true); clone.querySelectorAll('.katex-mathml,.mt-quiz details>div,.mt-meta,button').forEach(n=>n.remove());
   clone.querySelectorAll('.katex-html').forEach(n=>n.replaceWith(document.createTextNode(' formula '))); // a formula reads like a few words
@@ -1822,7 +1821,7 @@ registerLecture({
       <table class="t"><thead><tr><th>Draft source</th><th>vLLM</th><th>SGLang</th><th>TensorRT-LLM</th></tr></thead><tbody>
       <tr><td>Separate draft model</td><td>yes</td><td>yes</td><td>yes</td></tr>
       <tr><td>n-gram (prompt lookup)</td><td>yes</td><td>yes</td><td>yes</td></tr>
-      <tr><td>Medusa</td><td>-</td><td>–</td><td>legacy</td></tr>
+      <tr><td>Medusa</td><td>yes</td><td>–</td><td>yes</td></tr>
       <tr><td>EAGLE-1, EAGLE-2</td><td>yes</td><td>yes</td><td>legacy</td></tr>
       <tr><td>EAGLE-3</td><td>yes</td><td>yes</td><td>yes</td></tr>
       <tr><td>MTP (DeepSeek-V3)</td><td>yes</td><td>yes</td><td>yes</td></tr></tbody></table>
@@ -1865,6 +1864,152 @@ registerLecture({
   sources:['Leviathan, Kalman and Matias (2023)','Chen et al. (2023)','Sun et al. (2025), block verification','Chen et al. (2024), Sequoia','Zhou et al. (2024), DistillSpec','Liu et al. (2024), online speculative decoding','Cai et al. (2024), Medusa','Li et al. (2024, 2025), EAGLE-1/2/3','DeepSeek-AI (2024), DeepSeek-V3','Zheng et al. (2024), SGLang','Yu et al. (2022), Orca','Kwon et al. (2023), PagedAttention / vLLM','Sun et al. (NeurIPS 2023)','Hu et al. (ICLR 2025)','Weng et al. (NeurIPS 2025)','Thomas and Pal (ICLR 2026)','Su et al. (2023)','Sadhukhan et al. (ICLR 2025)','Huang et al. (COLM 2025)','Zhang et al. (ICLR 2025)','Li et al. (NeurIPS 2025)','Gist (NeurIPS 2023)','COCOM (WSDM 2025)']
 });
 </script>
+<script>
+/* ------------------------------------------------------------------ L11 */
+registerLecture({
+  id:'l11', number:11, part:'IV', title:'Post-training I: Learning from Demonstrations and Feedback', short:'Post-training: SFT, LoRA, RLHF',
+  lecturer:'', components:['optim','head'],
+  oneLine:'What post-training adds to a pretrained model: supervised fine-tuning on demonstrations, low-rank adaptation (LoRA), and reinforcement learning from human feedback with a learned reward model.',
+  summary:'Pretraining predicts a plausible continuation, which may not fulfil a request. Post-training changes the model so that it does. This lecture covers three tools: imitate demonstrated answers (SFT), make that update cheap with a low-rank change (LoRA), and learn from comparisons through a reward model and policy gradients (RLHF).',
+  keyIdeas:[
+    'SFT is next-token log loss on demonstrated responses, with the prompt’s own tokens masked out of the loss.',
+    'LoRA freezes W₀ and trains ΔW = BA of rank r: r(m + n) trainable entries instead of mn, mergeable for inference.',
+    'A reward model turns comparisons into a score via P(B ≻ A) = σ(r(B) − r(A)).',
+    'Policy gradient weights each sampled answer’s log-probability by its (baseline-centred) reward; a KL penalty to the SFT model limits drift and reward over-optimisation.'
+  ],
+  sections:[
+    {id:'why', title:'What should post-training add?', body:String.raw`
+      <table class="t"><thead><tr><th>Component</th><th>Purpose</th></tr></thead><tbody>
+      <tr><td>Architecture</td><td>Defines the model’s computation</td></tr><tr><td>Pretraining</td><td>Learns language and knowledge from text</td></tr>
+      <tr><td>Inference</td><td>Generates responses efficiently</td></tr><tr><td><b>Post-training</b></td><td><b>?</b></td></tr></tbody></table>
+      <p><b>GPT-3 and InstructGPT.</b> Asked to “Explain the moon landing to a 6 year old in a few sentences,” GPT-3 continued with another, similar request (“Explain the theory of gravity to a 6 year old.”); InstructGPT answered it (“People went to the moon, and they took pictures of what they saw…”).</p>
+      <p><b>What did pretraining optimize?</b> The next-token log loss of observed text,</p>
+      $$ \mathcal L(\theta) = -\sum_t\log p_\theta(x_t\mid x_{\lt t}). $$
+      <p>It predicts the continuation of observed text, and a plausible continuation may not fulfil the request. On the web, a list of questions is often followed by another question, which is why GPT-3 might continue with one.</p>
+      <h3>Can prompting close the gap?</h3>
+      <p>Context can guide the continuation: a prompt that begins “A science teacher gives clear explanations to children. Child: How did people land on the Moon? Teacher:” makes an explanation the likely continuation. <b>In-context learning</b> goes further: demonstrations in the prompt (c#a!t → cat, d@o#g → dog, b!i@r#d → bird) let the model complete a new query (h%o!r@s#e → horse) with its weights fixed. In GPT-3’s experiments, accuracy at recovering words rose with the number K of examples in the prompt, and more with an instruction than without.</p>
+      <div data-widget="icl-loop"></div>
+      <p><b>Post-training versus prompting.</b> Comparing two 175B models on user prompts, GPT-3 with task examples in the prompt against InstructGPT (trained on demonstrations and human feedback), evaluators preferred InstructGPT in 71 ± 4% of comparisons (95% confidence interval).</p>
+      <h3>Post-training beyond conversation</h3>
+      <table class="t"><thead><tr><th>Target</th><th>Examples</th></tr></thead><tbody>
+      <tr><td>Assistant behaviour</td><td>Useful, truthful, safe responses</td></tr><tr><td>Problem solving</td><td>Math, code, reasoning, checking</td></tr><tr><td>Agentic capability</td><td>Tool use, delegation, coordination</td></tr></tbody></table>
+      <p><b>Agent coordination in Kimi K2.5.</b> A coordinator delegates subtasks to helper models and combines the results. Training the coordinator with RL (helpers fixed), its accuracy and its average parallelism (concurrent agent work) both rose with RL training compute. What if we rewarded only the number of agents launched? That would encourage launching agents, and more agents need not mean better results. Kimi rewards task performance and completed subtasks, and the auxiliary reward weights decay to zero over training. What you reward is what you get.</p>`},
+    {id:'signals', title:'Post-training signals', body:String.raw`
+      <table class="t"><thead><tr><th>Available information</th><th>A way to learn from it</th></tr></thead><tbody>
+      <tr><td>Demonstrations</td><td>Supervised fine-tuning (SFT)</td></tr><tr><td>Response comparisons</td><td>Preference learning</td></tr>
+      <tr><td>Task outcomes</td><td>Reinforcement learning (RL)</td></tr><tr><td>Teacher-model outputs</td><td>Learn from a teacher (distillation)</td></tr></tbody></table>
+      <p><b>Example recipe: InstructGPT.</b> Pretrained GPT-3, then supervised fine-tuning, then reinforcement learning from human feedback (RLHF); throughout, evaluate response quality and retained capabilities. This lecture covers SFT, efficient adaptation (LoRA) and RLHF; direct preferences (DPO) and distillation come later.</p>`},
+    {id:'sft', title:'Supervised fine-tuning', body:String.raw`
+      <p><b>Data:</b> prompts paired with desired responses. <b>Goal:</b> learn to produce this behaviour on new prompts. Start from a pretrained model and train it to predict the demonstrated response tokens. For one prompt \(x\) and demonstrated response \(y = (y_1,\dots,y_T)\):</p>
+      $$ \mathcal L(\theta;x,y) = -\sum_{t=1}^T\log p_\theta(y_t\mid x, y_{\lt t}). $$
+      <p>Each response token is predicted from its demonstrated prefix (teacher forcing), and the losses are averaged over the training data.</p>
+      <h3>Which predictions enter the loss?</h3>
+      <p>For the prompt “Where did Apollo 11 land?” and the response “On the Moon &lt;end&gt;” (four toy tokens), a loss mask of 0 excludes a target and 1 includes it. The prompt’s own next-token predictions get mask 0; the four response tokens get 1. Mask 0 removes the prompt’s own prediction loss, but not its influence: the response loss still backpropagates through the parameters that process the prompt, so those parameters still update (Tülu 3, Lambert et al., 2024).</p>
+      <div data-widget="sft-mask"></div>
+      <p><b>SFT with tool calls.</b> In a recorded conversation (schematic syntax), the user asks “Mean of [2, 4, 9]?” (no loss), the assistant calls <code>calculator((2+4+9)/3)</code> (loss), the tool returns 5 (no loss: the model observes tool results, it does not imitate them), and the assistant answers “The mean is 5.” (loss).</p>
+      <table class="t"><thead><tr><th></th><th>Pretraining</th><th>SFT</th></tr></thead><tbody>
+      <tr><td>Data</td><td>Broad text</td><td>Demonstrations</td></tr><tr><td>Target</td><td>Next token</td><td>Next token</td></tr>
+      <tr><td>Loss mask</td><td>Often all tokens</td><td>Often assistant tokens</td></tr><tr><td>Emphasis</td><td>Broad capability</td><td>Desired behaviour</td></tr></tbody></table>`},
+    {id:'sft-data', title:'Building and weighting the demonstrations', body:String.raw`
+      <table class="t"><thead><tr><th>Dataset decision</th><th>Effect on training</th></tr></thead><tbody>
+      <tr><td>Example sources</td><td>Behaviours available to imitate</td></tr><tr><td>Filter and verify</td><td>Errors that enter training</td></tr>
+      <tr><td>Choose the mixture</td><td>Exposure to tasks and difficulty</td></tr><tr><td>Separate evaluation</td><td>Whether gains generalise</td></tr></tbody></table>
+      <p>Hold out evaluation examples and check for exact and near-duplicate overlap with training data.</p>
+      <p><b>Weighting short and long responses.</b> Two demonstrations of 10 and 1,000 tokens. Averaging the loss over all 1,010 tokens gives the short response about 1% of the weight and the long one about 99%; averaging each response first, then the two means, gives 50% each. Normalisation changes the influence of long answers.</p>
+      <div data-widget="length-weight"></div>
+      <p><b>Demonstrations during training.</b> Staged schedules use general text first, then demonstrations; mixed schedules use both in the same phase, and mixed pretraining can still be followed by a separate SFT stage. Instruction Pre-Training (Cheng et al., 2024) enriches pretraining text with generated instruction–response pairs: from “Aster Observatory opens at 18:00. Its last entry is at 22:00.” it generates “Q: When is the observatory’s last entry? A: 22:00.” Further SFT also helped in the paper’s experiments.</p>
+      <p><b>Loss versus response quality.</b> In InstructGPT’s SFT experiments, validation loss rose after about one epoch, yet more training kept improving human preference ratings. Select checkpoints by response quality, not loss alone.</p>`},
+    {id:'sft-updates', title:'How SFT updates work, and what they cost', body:String.raw`
+      <p>Start from pretrained weights. Full fine-tuning makes all weights trainable, and the same backpropagation and optimizer machinery applies:</p>
+      $$ \theta\leftarrow\theta - \eta\,\nabla_\theta\mathcal L_{\text{SFT}}(\theta). $$
+      <p>What are the costs and risks of updating all weights? <b>Risk: losing pretrained capabilities.</b> In the InstructGPT study (175B, zero-shot), SFT lowered HellaSwag accuracy from 78.1% to 75.3% and SQuADv2 F1 from 64.30 to 57.67. Evaluate retained skills as well as the target behaviour.</p>
+      <p><b>Learning rate and duration.</b> GPT-3’s pretraining peak learning rate was \(6.0\times10^{-5}\); InstructGPT’s SFT initial rate \(5.03\times10^{-6}\), about 12 times smaller. Tune both rate and duration: a small rate alone cannot ensure retention. <b>Cost:</b> updating every entry needs gradients and Adam state for all of them, which is what LoRA attacks.</p>`},
+    {id:'lora', title:'LoRA: a low-rank change to each matrix', body:String.raw`
+      <p><b>Adapting one weight matrix.</b> Let \(x\in\mathbb R^n\) be the activation entering one projection layer, with output \(h_0 = W_0x\) and \(W_0\) of size \(m\times n\). Full fine-tuning lets every entry change: \(W = W_0 + \Delta W\), where \(\Delta W\) records the accumulated change to all \(mn\) entries.</p>
+      <table class="t"><thead><tr><th>For this matrix</th><th class="r">Stored scalar values</th></tr></thead><tbody>
+      <tr><td>Trainable weights</td><td class="r">mn</td></tr><tr><td>Weight gradients</td><td class="r">mn</td></tr><tr><td>Adam first + second moments</td><td class="r">2mn</td></tr></tbody></table>
+      <p>Parameter state is \(O(mn)\) and dense training work \(O(Tmn)\), with \(T\) the total token positions in the training step. Can useful changes live in a smaller space?</p>
+      <p><b>What low rank means.</b> Rank counts the independent output directions of a linear map. \(\begin{pmatrix}1&2\\2&4\end{pmatrix}\) has one direction (its second column is twice the first); \(\begin{pmatrix}1&0\\0&1\end{pmatrix}\) has two (neither column is a multiple of the other).</p>
+      <p><b>LoRA learns a factored change</b> (Hu et al., 2021):</p>
+      $$ W = W_0 + BA,\qquad B\in\mathbb R^{m\times r},\quad A\in\mathbb R^{r\times n}. $$
+      <p>Freeze \(W_0\); train only \(A\) and \(B\). The change \(\Delta W = BA\) has rank at most \(r\).</p>
+      <h3>Rank one: one output direction</h3>
+      $$ \Delta h = h - h_0 = b\,(a^\top x). $$
+      <p>\(a^\top x\) is one scalar: how strongly this input activates a learned feature. \(b\) turns that scalar into a change along one learned output direction. With \(a = (1,-2)^\top\) and \(b = (1,2)^\top\): input \((1,0)\) gives coefficient 1 and \(\Delta h = (1,2)\); input \((0,1)\) gives \(-2\) and \(\Delta h = (-2,-4)\). Can a rank-one update produce \((1,0)\) for one input and \((0,1)\) for another? No: every output change lies along \(b\).</p>
+      <div data-widget="lowrank"></div>
+      <p><b>Combining \(r\) output directions.</b> Row \(a_j^\top\) of \(A\) computes a coefficient \(a_j^\top x\), and column \(b_j\) of \(B\) is its output direction:</p>
+      $$ \Delta h = BAx = \sum_{j=1}^r b_j\,(a_j^\top x). $$
+      <p>A larger \(r\) allows a richer change and trains more parameters.</p>
+      <h3>Gradients and initialisation</h3>
+      <p>Backpropagation gives \(G := \partial\mathcal L/\partial W = \partial\mathcal L/\partial(\Delta W)\). Since \(d(\Delta W) = (dB)A + B(dA)\) (Homework 1, Problem 1(b)),</p>
+      $$ \nabla_A\mathcal L = B^\top G,\qquad \nabla_B\mathcal L = GA^\top,\qquad A\leftarrow A - \eta\nabla_A\mathcal L,\quad B\leftarrow B - \eta\nabla_B\mathcal L. $$
+      <p>Standard initialisation: \(A\) random, \(B = 0\). Then \(BA = 0\), so the initial forward pass matches the base model; random \(A\) lets \(B\) receive a gradient first (\(GA^\top\neq0\)), and after \(B\) changes, \(A\) receives gradients too. Both zero would give zero gradients for both, forever.</p>
+      <div data-widget="lora-init"></div>`},
+    {id:'lora-practice', title:'LoRA in practice', body:String.raw`
+      <p><b>Trainable parameter counts.</b> The full matrix has \(mn\) entries; the factors \(mr + rn = r(m+n)\). With \(m = n = 4096\) and \(r = 8\): 16,777,216 against 65,536, 256 times fewer trainable entries for this matrix.</p>
+      <div data-widget="lora-counts"></div>
+      <p><b>Computing the branch.</b> \(h = W_0x + B(Ax)\): first \(z = Ax\), then \(\Delta h = Bz\). The added branch costs \(O(rn + mr)\) per token, while the base multiplication still costs \(O(mn)\); no dense \(BA\) is formed during training. <b>Merging for inference:</b> after training, fix \(A\) and \(B\), set \(W_{\text{merged}} = W_0 + BA\), and compute \(h = W_{\text{merged}}x\): one dense multiplication, with no extra branch.</p>
+      <div data-widget="lora-merge"></div>
+      <table class="t"><thead><tr><th>Reduced by LoRA</th><th>Still required</th></tr></thead><tbody>
+      <tr><td>Trainable weight gradients</td><td>Frozen base weights</td></tr><tr><td>Adam states (only for A and B)</td><td>Base forward computation</td></tr>
+      <tr><td>Task-specific saved weights</td><td>Activations and gradient flow</td></tr></tbody></table>
+      <p>Actual memory and speed depend on the full training system. QLoRA (Dettmers et al., 2023) also stores the frozen base in 4-bit precision (Lecture 9’s weight quantization).</p>
+      <p><b>Choosing the rank.</b> GPT-3 175B on WikiSQL (question + table schema → SQL), LoRA on the query and value projections, SQL logical-form validation accuracy; full fine-tuning 73.8%, typical seed variation about 0.5 points:</p>
+      <table class="t"><thead><tr><th>Rank r</th><th class="r">1</th><th class="r">2</th><th class="r">4</th><th class="r">8</th><th class="r">64</th></tr></thead><tbody>
+      <tr><td>Trainable parameters (relative to r = 1)</td><td class="r">1×</td><td class="r">2×</td><td class="r">4×</td><td class="r">8×</td><td class="r">64×</td></tr>
+      <tr><td>Logical-form accuracy</td><td class="r">73.4%</td><td class="r">73.3%</td><td class="r">73.7%</td><td class="r">73.8%</td><td class="r">73.5%</td></tr></tbody></table>
+      <p>Here raising the rank gives no clear accuracy gain (Hu et al., 2021; see also Thinking Machines Lab, 2025, “LoRA Without Regret”).</p>`},
+    {id:'feedback', title:'Learning from human feedback', body:String.raw`
+      <p><b>Getting feedback more easily.</b> Human demonstrations require complete responses, and long or specialised answers are costly to produce. Instead, ask people to compare proposed answers (Christiano et al., 2017). “Explain the Moon landing to a six-year-old.” A: “Apollo 11 used lunar-orbit rendezvous, with separate command and lunar modules.” B: “A rocket took astronauts to the Moon. Two landed in a small spacecraft, walked around, and then came home.” Which answer better fits the requested audience?</p>
+      <p><b>Why comparisons?</b> A numerical rating needs a shared scale. Rater 1 scores A 4/10 and B 7/10; rater 2 scores 2/10 and 5/10. The numbers disagree, but both judgments say B fits this request better. (A shared rubric is still necessary.)</p>
+      <table class="t"><thead><tr><th>Demonstration</th><th>Comparison</th></tr></thead><tbody>
+      <tr><td>Prompt + target answer</td><td>Prompt + two answers + choice</td></tr><tr><td>One response to imitate</td><td>An ordering to learn from</td></tr></tbody></table>
+      <p>How do relative judgments improve a generator? <b>RLHF with a reward model</b>: (1) learn a reward model from comparisons; (2) use its scores to improve the assistant.</p>`},
+    {id:'reward-model', title:'The reward model', body:String.raw`
+      <p>A reward model assigns a learned scalar score \(r_\phi(x,y)\) to a complete response \(y\) to prompt \(x\), with scorer parameters \(\phi\): a transformer representation plus a learned scalar output head. It can score new responses without a new human label.</p>
+      <p><b>From score differences to choices.</b> The model assumes (the Bradley–Terry form)</p>
+      $$ P(B\succ A\mid x) = \sigma\big(r_\phi(x,B) - r_\phi(x,A)\big),\qquad \sigma(z) = \frac1{1+e^{-z}}. $$
+      <p>With scores 1 for A and 3 for B, the predicted probability that B is preferred is \(\sigma(2)\approx0.88\). Only differences matter: adding a constant to every score changes nothing.</p>
+      <p><b>Training.</b> For an observed label “B is preferred to A”,</p>
+      $$ \ell(\phi) = -\log\sigma\big(r_\phi(x,B) - r_\phi(x,A)\big). $$
+      <p>Reducing the loss increases B’s score relative to A’s. Update the reward model \(\phi\); keep the assistant \(\theta\) fixed.</p>
+      <div data-widget="bt-pref"></div>`},
+    {id:'policy-gradient', title:'Training the assistant with the reward model', body:String.raw`
+      <p>Sample answers from the current assistant, score them with the fixed reward model, make a reward-weighted policy update, then sample new answers from the updated assistant. <b>Favouring higher-reward responses:</b> if A (technical, reward 1) and B (for a child, reward 3) start at probability 0.5 each, the expected reward is 2.0; moving to 0.2 and 0.8 raises it to 2.6. How can we choose parameter updates systematically?</p>
+      <p><b>Maximising expected reward.</b> For a fixed prompt, the language model is a <b>policy</b> \(\pi_\theta\): \(\pi_\theta(y\mid x)\) is its probability of generating response \(y\). With \(\phi\) fixed,</p>
+      $$ J(\theta) = \mathbb E_{y\sim\pi_\theta(\cdot\mid x)}\big[r_\phi(x,y)\big] = \sum_y\pi_\theta(y\mid x)\,r_\phi(x,y),\qquad \nabla_\theta J = \sum_yr_\phi(x,y)\,\nabla_\theta\pi_\theta(y\mid x). $$
+      <p>There are too many responses to sum over. The log-derivative trick, \(\nabla_\theta\pi_\theta = \pi_\theta\nabla_\theta\log\pi_\theta\), turns the sum into an expectation (Williams, 1992):</p>
+      $$ \nabla_\theta J = \mathbb E_{y\sim\pi_\theta(\cdot\mid x)}\big[r_\phi(x,y)\,\nabla_\theta\log\pi_\theta(y\mid x)\big]. $$
+      <p>Sample answers; differentiate their weighted log-probabilities.</p>
+      <p><b>The connection back to SFT.</b> SFT gives a demonstrated answer weight 1: \(\ell_{\text{SFT}}(\theta) = -\log\pi_\theta(y^*\mid x)\). Policy gradient gives a sampled answer weight \(w\): \(\ell_{\text{PG}}(\theta) = -w\log\pi_\theta(y\mid x)\) with \(w = r_\phi(x,y)\). For either loss, \(\theta\leftarrow\theta - \eta\nabla_\theta\ell\), holding the sampled response and its reward fixed for the update.</p>
+      <p><b>Centring rewards around a baseline.</b> Use weight \(r_\phi(x,y) - b(x)\), where \(b(x)\) does not depend on the sampled response. With \(P(A) = P(B) = 0.5\) and mean reward 2, A gets weight −1 and B +1: the same expected gradient, potentially lower variance. (The baseline adds \(b\,\mathbb E[\nabla\log\pi_\theta] = b\,\nabla\sum_y\pi_\theta = 0\).)</p>
+      <div data-widget="pg-loop"></div>`},
+    {id:'reference', title:'Keeping a reference policy, and when the reward model is wrong', body:String.raw`
+      <p>Start from the SFT model and keep a frozen copy \(\pi_{\text{ref}}\). Optimise</p>
+      $$ \max_\theta\ \mathbb E_{y\sim\pi_\theta}\big[r_\phi(x,y)\big] - \beta\,D_{\mathrm{KL}}\big(\pi_\theta(\cdot\mid x)\,\|\,\pi_{\text{ref}}(\cdot\mid x)\big),\qquad\beta>0. $$
+      <p>The reward term favours higher-scoring answers; the KL penalty discourages large changes in the distribution, and \(\beta\) sets its strength. For a fixed prompt, the maximiser over all distributions has a closed form (a standard result, not on the slides): \(\pi^*(y)\propto\pi_{\text{ref}}(y)\,e^{r_\phi(x,y)/\beta}\). Large \(\beta\) stays near the reference; small \(\beta\) concentrates on the top-scoring answer.</p>
+      <div data-widget="kl-ref"></div>
+      <h3>Over-optimising the reward model</h3>
+      <p>What if the reward model is wrong? Gao, Schulman and Hilton (2022) ran a controlled experiment with two reward models: a proxy reward model whose score trains the assistant, and a separate 6B evaluator whose score measures the result (synthetically, the evaluator also supplies the comparison labels). With a small (3M-parameter) proxy, the optimised proxy score keeps rising as the policy moves away from its start (measured by KL from the initial policy), while the evaluator’s score first rises, then falls. The policy learns to exploit the proxy’s errors.</p>
+      <div data-widget="overopt"></div>
+      <p><b>Returning to InstructGPT.</b> Against the same 175B SFT comparator, PPO (Proximal Policy Optimization, the RL update method used) improved preference; PPO-ptx adds pretraining-data likelihood updates to RLHF, helping retain pretrained capabilities.</p>`},
+    {id:'summary', title:'Summary and what comes next', body:String.raw`
+      <table class="t"><thead><tr><th>Method</th><th>Training change</th></tr></thead><tbody>
+      <tr><td>SFT</td><td>Imitate demonstrated responses</td></tr><tr><td>LoRA</td><td>Train a low-rank change to the weights</td></tr><tr><td>RLHF</td><td>Favour responses with higher learned reward</td></tr></tbody></table>
+      <p>Evaluate response quality and retained capabilities. Next: PPO (controlling policy-gradient updates), DPO (training directly on preference pairs), distillation (learning from a teacher’s outputs), and reasoning rewards with iterative improvement.</p>`}
+  ],
+  quiz:[
+    {q:'In SFT, the prompt tokens get loss mask 0. Do the parameters that process the prompt still change?', options:['No, they are frozen','Yes: the response loss backpropagates through them','Only if the prompt is short'], answer:1, why:'Masking removes the prompt’s own prediction loss, not gradient flow through the prompt.'},
+    {q:'A 4096 × 4096 matrix with LoRA rank 8 has how many trainable entries?', options:['16,777,216','65,536','32,768'], answer:1, why:'r(m + n) = 8 × 8,192 = 65,536, 256× fewer than mn.'},
+    {q:'Why initialise LoRA with A random and B = 0, not both zero?', options:['To save memory','BA = 0 keeps the start equal to the base, and random A gives B a nonzero gradient GAᵀ; both zero gives zero gradients forever','Both zero would diverge'], answer:1, why:'∇_A = BᵀG and ∇_B = GAᵀ both vanish if A = B = 0.'},
+    {q:'Reward-model scores are 1 for A and 3 for B. The predicted P(B ≻ A) is…', options:['0.75','σ(2) ≈ 0.88','0.67'], answer:1, why:'Bradley–Terry: σ(r_B − r_A); only the difference matters.'},
+    {q:'What does subtracting a baseline b(x) from the reward change in the policy gradient?', options:['The expected gradient','Nothing in expectation; it can lower the variance','It makes the gradient unbiased'], answer:1, why:'b·𝔼[∇log π] = b·∇Σπ = 0, so the mean is unchanged.'},
+    {q:'Why add a KL penalty to the reference (SFT) policy?', options:['To speed up sampling','To limit drift: keeps capabilities and stops the policy from exploiting reward-model errors','To make the reward model larger'], answer:1, why:'Proxy reward keeps rising with optimisation while true quality can fall (Gao et al., 2022).'}
+  ],
+  sources:['Brown et al. (2020), GPT-3','Ouyang et al. (2022), InstructGPT','OpenAI (2022), InstructGPT announcement','DeepSeek-AI (2025), DeepSeek-R1','Kimi Team (2026), Kimi K2.5','Rafailov et al. (2023), DPO','Agarwal et al. (2024), on-policy distillation','Lambert et al. (2024), Tülu 3','Cheng et al. (2024), Instruction Pre-Training','Hu et al. (2021), LoRA','Thinking Machines Lab (2025), LoRA Without Regret','Dettmers et al. (2023), QLoRA','Christiano et al. (2017)','Williams (1992)','OpenAI Spinning Up, policy gradients','Schulman et al. (2017), PPO','Gao, Schulman and Hilton (2022)']
+});
+</script>
+
 <script>
 /* =====================================================================
    MIDTERM REVIEW DATA — one addReview() per lecture.
@@ -2080,6 +2225,32 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') hide(); });
 });
 </script>
+<script>
+/* ---- Lecture 11: midterm review + variable glossary ---- */
+addReview('l11',{
+  gist:'Post-training makes a pretrained model fulfil requests: imitate demonstrations (SFT), cheaply (LoRA), then learn from comparisons via a reward model and policy gradients (RLHF).',
+  use:'Turning a base model into an assistant; adapting to a task with limited memory; using comparisons when demonstrations are expensive.',
+  how:'SFT: log loss on response tokens, prompt masked. LoRA: freeze W₀, train BA (A random, B = 0), merge after. RLHF: fit r_φ with −log σ(r_B − r_A), then maximise reward − β·KL to the SFT model with baseline-centred policy gradients.',
+  formulas:String.raw`$$ \mathcal L_{\text{SFT}}=-\textstyle\sum_t\log p_\theta(y_t\mid x,y_{\lt t}) $$ $$ W=W_0+BA,\quad r(m+n)\ \text{trainable entries} $$ $$ P(B\succ A)=\sigma(r_B-r_A),\quad \nabla J=\mathbb E\big[(r-b)\nabla\log\pi_\theta(y\mid x)\big] $$ $$ \max_\theta\ \mathbb E[r_\phi]-\beta D_{\mathrm{KL}}(\pi_\theta\|\pi_{\text{ref}}) $$`,
+  trap:'Prompt masking removes the prompt’s loss, not its gradient flow. Both LoRA factors at 0 never train. A proxy reward optimised too hard rises while true quality falls; SFT validation loss can rise while quality improves.',
+  decide:[['Model continues text instead of answering','SFT on demonstrations','sft'],['Fine-tuning memory too high','LoRA (or QLoRA with a 4-bit base)','lora-practice'],['Demonstrations costly, comparisons cheap','Reward model + RLHF with KL penalty','reward-model']],
+  links:[['SFT','sft'],['LoRA','lora'],['Reward model','reward-model'],['Policy gradient','policy-gradient'],['KL & over-optimisation','reference']]
+});
+addGlossary('l11',{Δ:'change (ΔW: change to the weights; Δh: change in the output)',d:'differential: a small change',π:'policy (distribution over responses)',θ:'model (assistant) parameters',x:'prompt',x_t:'token t of the text',y:'response',y_t:'response token t','y^*':'demonstrated response',T:'response length (tokens)',p_θ:'the model’s next-token probability','cal L':'training loss',η:'learning rate',W_0:'frozen pretrained weight matrix (m × n)',W:'adapted weight matrix','Δ W':'change to the weights',B:'LoRA output factor (m × r), initialised to 0',A:'LoRA input factor (r × n), initialised randomly',r:'LoRA rank',m:'output width of the matrix',n:'input width of the matrix',h_0:'base output W₀x',h:'adapted output','Δ h':'change in the output',a:'learned input feature (row of A)',b:'learned output direction (column of B)',a_j:'row j of A: an input feature',b_j:'column j of B: an output direction',z:'r-number intermediate z = Ax',G:'loss gradient with respect to W',W_merged:'W₀ + BA, used at inference',r_φ:'reward model score',φ:'reward-model parameters',σ:'logistic function 1/(1 + e^{−z})',ℓ:'reward-model loss',P:'predicted preference probability',π_θ:'policy: the assistant’s distribution over responses',π_ref:'frozen reference (SFT) policy',J:'expected reward',β:'KL penalty strength',w:'weight on a sampled answer’s log-probability',ℓ_SFT:'SFT loss',ℓ_PG:'policy-gradient loss',D_KL:'Kullback–Leibler divergence'},
+ {'policy-gradient':{b:'baseline (does not depend on the sampled response)',r:'reward'},reference:{r:'reward'},'reward-model':{A:'first answer',B:'second answer',z:'score difference',r:'reward score'},feedback:{A:'first answer',B:'second answer'},'sft-updates':{T:'response length'},lora:{T:'token positions in the training step'},'lora-practice':{T:'token positions'},midterm:{b:'baseline',r:'reward',r_B:'reward of answer B',r_A:'reward of answer A',A:'LoRA input factor; in the preference formula, answer A',B:'LoRA output factor; in the preference formula, answer B'}});
+</script>
+
+<script>
+/* ---- Homework 2: variable glossary ---- */
+addGlossary('hw2',{},{
+ p1:{T:'number of tokens',h_t:'token vector t',h:'token vector',d:'token width',E:'number of experts',e:'expert index',F_e:'expert e (a two-layer MLP)',W_e1:'first-layer weights of expert e (m × d)',W_e2:'second-layer weights of expert e (d × m)',m:'expert hidden width',φ:'ReLU, max{z, 0} entrywise',z:'pre-activation',s_t:'router scores of token t',s_te:'router score of expert e for token t',s_tj:'router score of expert j for token t',W_r:'router matrix (E × d)',k:'experts selected per token',S_t:'experts selected for token t',w_te:'router weight of expert e for token t',w_j:'router weight in record j',y_t:'layer output for token t',N_e:'tokens assigned to expert e',H_e:'expert e’s input matrix (d × N_e)',Z_e:'expert e’s output matrix (d × N_e)',t_j:'token index in record j',τ:'time per token on one device'},
+ p2ab:{n:'cached positions',H:'number of heads',d:'head dimension',c_i:'shared latent vector of position i',d_c:'latent width',k_hi:'key of head h at position i',v_hi:'value of head h at position i',U_Kh:'key up-projection of head h',U_Vh:'value up-projection of head h',q_h:'query of head h',s_hi:'score of head h on position i',a_hi:'attention weight of head h on position i',o_h:'output of head h','tilde q_h':'transformed query U_{K,h} q_h',z_h:'weighted sum of latents for head h'},
+ p2cd:{s:'attention score',v:'value vector',r:'rank in the sorted order',H:'number of heads',d:'head dimension',d_c:'latent width',d_I:'indexer key width',K:'positions selected',k_iI:'search key of position i',q_I:'indexer query',I_i:'indexer score of position i',S:'selected positions',C:'total multiply-adds per step',c_i:'latent of position i',q:'query',U_K:'key up-projection',U_V:'value up-projection',o:'full attention output',o_S:'output using only S',a_i:'attention weight of position i',m:'kept attention mass m(S)',a_iS:'renormalised weight on S',ε:'allowed lost mass',s_hi:'attention score',v_1:'value of position 1',a:'attention weights'},
+ p3:{W:'weight matrix (p × d)',X:'calibration inputs (d × m)',p:'number of rows (outputs)',d:'number of inputs',m:'number of calibration inputs',D:'output error on calibration data',Q:'quantized matrix',Q_L:'low-precision grid',Q_H:'high-precision grid',b_L:'bits per low-precision weight',b_H:'bits per high-precision weight',S:'rows given high precision',w_i:'row i of W (as a column)',q_iL:'row i of Q^L',q_iH:'row i of Q^H',q_i:'row i of the quantized matrix',D_iL:'error of row i at low precision',D_iH:'error of row i at high precision',Δ_i:'benefit of upgrading row i',B:'storage budget (bits)',C:'bits for grids and row indicators',c:'extra bits per upgraded row',L:'largest number of rows that can be upgraded',P:'number of rows with positive benefit',r:'min(L, P)',V:'total benefit of a set',X_A:'first calibration matrix (identity)',X_B:'second calibration matrix diag(1, 3)'},
+ p4:{s:'one singular value (a scalar)',v:'a vector with X_j v = 0',x:'variable',M:'momentum matrix (m × n)',m:'rows',n:'columns',U:'left singular vectors',V:'right singular vectors',Σ:'singular values (diagonal)',σ_i:'i-th singular value',P:'polar factor UVᵀ (Muon’s ideal update)',X_j:'Newton–Schulz iterate j',X_0:'starting iterate M/‖M‖_F',S_j:'diagonal of singular values of X_j',s_ij:'singular value i of X_j',s_j:'one singular value at step j',f:'update map f(s) = (3s − s³)/2',ℓ:'limit of the sequence',e_j:'error 1 − s_j',η:'step size',v_1:'first input direction',v_2:'second input direction',r:'rank',U_r:'first r columns of U',V_r:'first r columns of V',I_n:'n × n identity'}
+});
+</script>
+
 <script>
 /* =====================================================================
    LECTURE SUPPLEMENTS — material from the slides added after an audit
@@ -2334,7 +2505,7 @@ registerAssignment({
    solution:String.raw`<p><b>(a)(i)</b> Claim \(P(k)\): \(H_{n_1+\dots+n_k}(p_1x_1,\dots,p_kx_k) = H_k(p_1,\dots,p_k) + \sum_{i=1}^k p_iH_{n_i}(x_i)\). \(P(2)\) is (E3). Assume \(P(k)\) and write \(s = 1-p_{k+1}\). Group the first \(k\) blocks against the last with (E3), then apply \(P(k)\) inside the first group:</p>
    $$ \begin{aligned} H(p_1x_1,\dots,p_{k+1}x_{k+1}) &= H_2(s, p_{k+1}) + s\,H\Big(\tfrac{p_1}{s}x_1,\dots,\tfrac{p_k}{s}x_k\Big) + p_{k+1}H_{n_{k+1}}(x_{k+1})\\ &= H_2(s,p_{k+1}) + s\,H_k\Big(\tfrac{p_1}{s},\dots,\tfrac{p_k}{s}\Big) + \sum_{i=1}^{k+1} p_iH_{n_i}(x_i). \end{aligned} $$
    <p>Applying (E3) the same way to the point masses \(x_i = (1)\), with \(H_1(1) = 0\), the first two terms equal \(H_{k+1}(p_1,\dots,p_{k+1})\). So \(P(k+1)\) holds. Now take \(k=m\), \(p_i = 1/m\), \(n_i = n\), \(x_i = u_n\): the left side is \(H_{mn}(u_{mn})\), so \(A(mn) = A(m) + A(n)\).</p>
-   <div class="fix">\(H_1(1) = 0\) follows from (E3) with \(m=n=1\), \(t=1\): \(H_2(1,0) = H_2(1,0) + H_1(1)\), using the zero-weight convention.</div>
+   <div class="fix">The submitted proof used \(H_1(1) = 0\) without proving it. It follows from (E3) with \(m=n=1\), \(t=1\): \(H_2(1,0) = H_2(1,0) + H_1(1)\), using the zero-weight convention.</div>
    <p><b>(ii)</b> Taking \(m=n=1\) in (i) gives \(A(1) = 2A(1)\), so \(A(1) = 0\), which is the case \(k=0\). Applying \(A(2n) = A(2)+A(n)\) repeatedly with \(A(2)=\log2\) gives \(A(2^k) = k\log2\).</p>
    <p><b>(iii)</b> For any \(k\), choose \(j\) with \(2^j\le n^k\lt 2^{j+1}\). Monotonicity and (ii) give \(j\log2\le A(n^k)\le(j+1)\log2\), and (i) gives \(A(n^k) = kA(n)\). So \(\tfrac jk\log2\le A(n)\le\tfrac{j+1}k\log2\). Also \(\tfrac jk\le\log_2n\lt \tfrac{j+1}k\). Both \(A(n)/\log2\) and \(\log_2n\) lie in an interval of width \(1/k\); letting \(k\to\infty\), \(A(n) = \log_2n\cdot\log2 = \log n\).</p>
    <p><b>(b)</b> Split outcome \(i\) into \(a_i\) outcomes of probability \(1/N\) each. By the grouped additivity of (a)(i),</p>
@@ -2350,6 +2521,144 @@ registerAssignment({
   ]
 });
 </script>
+<script>
+/* ------------------------------------------------------------------ HW2 */
+registerAssignment({
+  id:'hw2', number:2, title:'Efficient model computation',
+  summary:'42 points plus 4 optional. Four problems on the cost of efficient layers: batching a mixture of experts by expert, latent attention with an indexer, choosing which rows get more bits, and why Newton–Schulz converges to Muon’s polar factor.',
+  intro:String.raw`<p><b>Notation.</b> Use the multiply-add convention from Lecture 6: one accumulation \(z\leftarrow z + xy\) costs one multiply-add, so multiplying an \(a\times b\) matrix by a \(b\times c\) matrix costs \(abc\) multiply-adds. Treat transposes as free. \(\operatorname{diag}(a_1,\dots,a_r)\) is the diagonal matrix with those entries. You may use a result requested in an earlier part even if you have not proved it.</p>
+  <p>Statements are reproduced from the assignment; each solution is the submitted write-up, cleaned up for reading. Yellow notes mark corrections or additions. No answer key has been uploaded for this assignment yet; when it is, a “Compare with the answer key” panel will be added to each problem, as for Homework 1.</p>`,
+  problems:[
+  /* ---------------- Problem 1 ---------------- */
+  {id:'p1', title:'Problem 1: conditional computation with MoE (10 points)', lectures:['l4'], blurb:'parameter and compute counts, batching tokens by expert in O(Tk + E), and why balanced loads finish fastest',
+   statement:String.raw`<p>A mixture-of-experts layer evaluates a few experts per token. Following Lecture 4 and GShard, batch tokens by expert and combine the expert outputs for each token. There are \(T\) token vectors \(h_t\in\mathbb R^d\) and \(E\) experts with separate parameters. Expert \(e\) is a two-layer MLP</p>
+   $$ F_e(h) = W_{e,2}\,\varphi(W_{e,1}h),\qquad W_{e,1}\in\mathbb R^{m\times d},\ W_{e,2}\in\mathbb R^{d\times m},\qquad \varphi(z) = \max\{z,0\}\ \text{entrywise}. $$
+   <p>The router computes \(s_t = W_rh_t\) with \(W_r\in\mathbb R^{E\times d}\) and selects the \(k\) largest scores (\(1\le k\le E\)); \(S_t\) is the selected set, ties broken by smaller index. The output is</p>
+   $$ w_{t,e} = \frac{e^{s_{t,e}}}{\sum_{j\in S_t}e^{s_{t,j}}},\qquad y_t = \sum_{e\in S_t}w_{t,e}F_e(h_t). $$
+   <p>Every selected token–expert pair is evaluated (no capacity limit, no biases, no residual).</p>
+   <ol type="a"><li><b>(3 points)</b> Count the parameters in the router and experts. For the whole batch, compute the multiply-add counts for the router and for the selected experts, excluding weighted output aggregation. By what factor does selecting experts before evaluating them reduce expert computation compared with evaluating all \(E\) experts on every token? With \(T, d, m, k\) fixed, which counts still grow with \(E\)?</li>
+   <li><b>(4 points)</b> The router’s sets \(S_t\) and weights \(w_{t,e}\) are available. (i) (2 points) Write pseudocode that first counts \(N_e = |\{t: e\in S_t\}|\) and then fills an array of \(N_e\) assignment records for each expert. What must each record store to identify the destination token and apply its router weight? Prove that grouping the records takes \(O(Tk + E)\) operations (unit cost per index or scalar read, write or arithmetic; excluding copying token vectors and the computations below). (ii) (1 point) If expert \(e\)’s records contain token indices \(t_1,\dots,t_{N_e}\), define its input matrix \(H_e\); express its output matrix \(Z_e\) using two matrix products and \(\varphi\); give the dimensions of \(H_e\), \(W_{e,1}H_e\) and \(Z_e\). Skip experts with \(N_e = 0\). (iii) (1 point) Starting from \(y_t = 0\), give the update using column \(j\) of \(Z_e\) and its record, and prove the procedure computes \(y_t\).</li>
+   <li><b>(3 points)</b> Each expert has its own device; all start together, and expert \(e\) takes \(\tau N_e\) time (\(\tau>0\)). Assume \(T\) is a multiple of \(E\). Compare balanced loads \(N_e = Tk/E\) for all \(e\) with concentrated loads \(N_e = T\) for \(e\le k\) and \(N_e = 0\) otherwise. Compute the batch completion time and total expert multiply-add count for each case, the ratio of concentrated to balanced completion time, and prove that no assignment of \(k\) distinct experts per token can finish faster than the balanced case.</li></ol>`,
+   hint:String.raw`<p>(a) A matrix–vector product with an \(a\times b\) matrix costs \(ab\). (b) Counting sort: one pass to count, prefix sums for offsets, one pass to place. (c) The maximum of \(E\) numbers is at least their average, and \(\sum_eN_e = Tk\).</p>`,
+   solution:String.raw`<p><b>(a)</b> Router: \(Ed\) parameters. Experts: \(E(md + dm) = 2Emd\). Multiply-adds for the batch: router \(TEd\); the \(Tk\) selected token–expert pairs cost \(2md\) each, so \(2Tkmd\). Evaluating every expert on every token would cost \(2TEmd\), so selecting first reduces expert computation by the factor</p>
+   $$ \frac{2TEmd}{2Tkmd} = \frac Ek . $$
+   <p>With \(T, d, m, k\) fixed, the router’s parameters \(Ed\) and compute \(TEd\) grow linearly with \(E\), and so do the expert parameters \(2Emd\). The selected experts’ compute \(2Tkmd\) does not depend on \(E\): it scales with \(k\). This is the MoE trade, more stored capacity at fixed per-token compute.</p>
+   <p><b>(b)(i)</b> Counting, prefix offsets, then placement (a counting sort):</p>
+   <pre class="code">N = [0]*E                         # tokens per expert
+for t in 1..T:
+    for e in S_t:
+        N[e] += 1
+off[1] = 0                        # start of each expert's block in A
+for e in 2..E:
+    off[e] = off[e-1] + N[e-1]
+p = copy(off)                     # next free slot of each block
+A = [None]*(T*k)
+for t in 1..T:
+    for e in S_t:
+        A[p[e]] = (t, w[t,e])     # record: destination token and its weight
+        p[e] += 1</pre>
+   <p>Each record stores \((t, w_{t,e})\): the token index says where to add the output; the weight says how to scale it. <i>Cost:</i> every \(S_t\) has exactly \(k\) experts, so \(\sum_eN_e = Tk\). Initialising \(N\), the offsets and pointers costs \(O(E)\); the counting pass and the filling pass each touch every pair once, \(O(Tk)\). Total \(O(Tk + E)\).</p>
+   <p><b>(ii)</b> \(H_e = [h_{t_1},\dots,h_{t_{N_e}}]\in\mathbb R^{d\times N_e}\), and</p>
+   $$ Z_e = W_{e,2}\,\varphi(W_{e,1}H_e),\qquad Z_e[:,j] = W_{e,2}\,\varphi(W_{e,1}h_{t_j}) = F_e(h_{t_j}). $$
+   <p>Dimensions: \(H_e\) is \(d\times N_e\), \(W_{e,1}H_e\) is \(m\times N_e\), \(Z_e\) is \(d\times N_e\). Batching turns \(N_e\) matrix–vector products into one matrix–matrix product per layer, which is what makes MoE fast on hardware.</p>
+   <p><b>(iii)</b> For each expert with \(N_e>0\) and each \(j\), with record \(j = (t_j, w_j)\) where \(w_j = w_{t_j,e}\): \(y_{t_j}\leftarrow y_{t_j} + w_j\,Z_e[:,j]\). <i>Proof.</i> The filling pass creates exactly one record for each pair \((t,e)\) with \(e\in S_t\), placed in \(e\)’s block with weight \(w_{t,e}\), and no other records. The update for that record adds \(w_{t,e}Z_e[:,j] = w_{t,e}F_e(h_t)\) to \(y_t\) by (ii). So \(y_t\) receives exactly one contribution per \(e\in S_t\); skipped experts have no records; and addition is commutative, so the order does not matter. Hence \(y_t = \sum_{e\in S_t}w_{t,e}F_e(h_t)\).</p>
+   <p><b>(c)</b> Completion time is \(\max_e\tau N_e\). Balanced: \(\tau Tk/E\). Concentrated: \(\tau T\). Total expert multiply-adds are \(2md\sum_eN_e = 2Tkmd\) in both cases. Ratio of concentrated to balanced time: \(\tau T/(\tau Tk/E) = E/k\). <i>Lower bound:</i> for any assignment of \(k\) distinct experts per token, \(\sum_eN_e = Tk\), so</p>
+   $$ \max_e\tau N_e\ \ge\ \tau\cdot\frac1E\sum_eN_e = \frac{\tau Tk}E, $$
+   <p>because the maximum of \(E\) numbers is at least their average. The balanced case attains the bound. Same arithmetic, \(E/k\) times the wall-clock time: the reason for load balancing in Lecture 4.</p>`,
+   after:String.raw`<div data-widget="hw2-moe"></div>`},
+  /* ---------------- Problem 2 ---------------- */
+  {id:'p2ab', title:'Problem 2(a)–(b): full KV cache versus latent attention (6 points)', lectures:['l5','l6'], blurb:'cache size and multiply-adds for full KV and MLA, and when the latent cache trades memory for compute',
+   statement:String.raw`<p>Lectures 5–6 combine multi-head latent attention (MLA) with position selection in DeepSeek Sparse Attention, here with a simplified indexer. One decoding step has \(n\) cached positions and \(H\) heads of dimension \(d\). Each position has a shared latent \(c_i\in\mathbb R^{d_c}\); head \(h\)’s key and value are</p>
+   $$ k_{h,i} = U_{K,h}^\top c_i,\quad v_{h,i} = U_{V,h}^\top c_i,\quad U_{K,h}, U_{V,h}\in\mathbb R^{d_c\times d};\qquad s_{h,i} = \frac{q_h^\top k_{h,i}}{\sqrt d},\ \ a_{h,i} = \frac{e^{s_{h,i}}}{\sum_je^{s_{h,j}}},\ \ o_h = \sum_{i=1}^na_{h,i}v_{h,i}. $$
+   <p>Count the matrix products needed to compute \(o_h\) from \(q_h\) and the cached vectors, including query transformations (exclude computing input queries, building cache entries, any projection after \(o_h\), score scaling, softmax and selection). The KV cache size counts vectors kept for future steps, not model matrices or temporaries.</p>
+   <ol type="a"><li><b>(2 points)</b> A full KV cache stores \(k_{h,i}\) and \(v_{h,i}\) for every head and position. Compute its size in scalars and the multiply-adds for all scores and weighted value sums.</li>
+   <li><b>(4 points)</b> The cache stores only \(c_1,\dots,c_n\). Use associativity (Assignment 1, Problem 1(a)) to avoid reconstructing keys and values. (i) (2 points) Find \(\tilde q_h\in\mathbb R^{d_c}\) and \(z_h\in\mathbb R^{d_c}\) with \(s_{h,i} = \tilde q_h^\top c_i/\sqrt d\) and \(o_h = U_{V,h}^\top z_h\), and derive both identities. (ii) (1 point) Count the multiply-adds of the four stages (query transformation, scores, weighted latent sum, output projection), the total over \(H\) heads, and the cache size. (iii) (1 point) Compared with (a), when does this cache store strictly fewer scalars, and when does it use strictly more multiply-adds? Give an inequality in \(H, d, d_c, n\) for each.</li></ol>`,
+   hint:String.raw`<p>Transform the query once per head; for the output, sum the weighted latent vectors before applying \(U_{V,h}^\top\).</p>`,
+   solution:String.raw`<p><b>(a)</b> Each head and position stores \(k_{h,i}\) and \(v_{h,i}\), \(d\) scalars each: size \(2dHn\). Each score \(q_h^\top k_{h,i}\) costs \(d\), so scores cost \(Hnd\); each \(o_h = \sum_ia_{h,i}v_{h,i}\) costs \(nd\), so \(Hnd\) in total. Together \(2Hnd\).</p>
+   <p><b>(b)(i)</b></p>
+   $$ s_{h,i} = \frac{q_h^\top U_{K,h}^\top c_i}{\sqrt d} = \frac{(U_{K,h}q_h)^\top c_i}{\sqrt d}\ \Rightarrow\ \tilde q_h = U_{K,h}q_h,\qquad o_h = \sum_ia_{h,i}U_{V,h}^\top c_i = U_{V,h}^\top\sum_ia_{h,i}c_i\ \Rightarrow\ z_h = \sum_{i=1}^na_{h,i}c_i . $$
+   <p><b>(ii)</b> Per head: query transformation \(U_{K,h}q_h\): \(d\,d_c\); scores \(\tilde q_h^\top c_i\) for all \(i\): \(n\,d_c\); weighted latent sum: \(n\,d_c\); output projection \(U_{V,h}^\top z_h\): \(d\,d_c\). Over \(H\) heads, \(H(2dd_c + 2nd_c) = 2Hd_c(d+n)\). The cache holds only \(c_1,\dots,c_n\): \(nd_c\) scalars.</p>
+   <p><b>(iii)</b> Fewer scalars: \(nd_c\lt2dHn\iff d_c\lt2Hd\). More multiply-adds: \(2Hd_c(d+n)\gt2Hdn\iff d_c(d+n)\gt dn\), which always holds when \(d_c\ge d\) (then \(d_c(d+n)\ge d(d+n)\gt dn\)). The latent cache saves memory at the cost of computation: the same trade as Lecture 6’s MLA (16× fewer numbers read, 4× more multiply-adds in the slides’ example), which pays because decoding is limited by memory traffic, not arithmetic.</p>`,
+   after:String.raw`<div data-widget="hw2-mla"></div>`},
+  {id:'p2cd', title:'Problem 2(c)–(d): an indexer, a budget, and the best kept set (6 points + 2 optional)', lectures:['l5','l6'], blurb:'indexed MLA under compute and cache budgets (K = 20), a counterexample, and why the top-K weights minimise KL',
+   statement:String.raw`<ol type="a" start="3"><li><b>(6 points)</b> An indexer selects \(K\) positions for all heads (\(1\le K\le n\)). The cache stores \(c_i\) and a search key \(k_i^I\in\mathbb R^{d_I}\) for every position. From an input query \(q^I\in\mathbb R^{d_I}\), compute \(I_i = (q^I)^\top k_i^I\) and select the \(K\) largest scores (ties by smaller index): the set \(S\). Each head uses the procedure in (b), with scores and softmax only on \(S\) and latent sums over \(S\). All \(n\) latents and search keys are kept. (i) (2 points) Compute the cache size and the total multiply-add count \(C(K)\), including the indexer and the products \(U_{K,h}q_h\) (excluding forming \(q^I\) and the cached search keys). Does selecting fewer positions reduce the cache size? (ii) (3 points) Take \(H = 4\), \(d = 10\), \(d_c = 20\), \(d_I = 2\), \(n = 100\). Under a budget of 5,000 multiply-adds per step, find the largest allowed \(K\) and verify that \(K+1\) exceeds the budget. Compute the cache size and cost per step for full KV, MLA over all positions, and indexed MLA at this \(K\). Which procedures meet both this compute budget and a cache budget of 2,500 scalars? Compare the indexer’s score cost with the main-attention work saved. (iii) (1 point) For \(H = d = d_c = 1\), \(n = 2\), \(q = 0\), \(U_K = U_V = 1\), \(c_1 = 0\), \(c_2 = 1\) and \(S = \{1\}\), compute the full output \(o\) and the output \(o^S\) obtained by applying softmax and summing values only over \(S\).</li>
+   <li><b>(2 optional points)</b> Concentrated attention weights (H2O) motivate keeping a set that retains a large share of one head’s attention. Fix one head’s weights \(a_i>0\), \(\sum_ia_i = 1\). For a size-\(K\) set \(S\), let \(m(S) = \sum_{i\in S}a_i\) and \(a_i^S = a_i/m(S)\) on \(S\), 0 elsewhere. Using Assignment 1, Problem 3, prove \(\mathrm{KL}(a^S\|a) = -\log m(S)\le-\log(1-\varepsilon)\) if \(m(S)\ge1-\varepsilon\), \(0\le\varepsilon\lt1\). Which size-\(K\) set minimises this divergence (ties by smaller index)? Prove it, and explain why ranking the scores \(s_{h,i}\) gives the same set without computing softmax.</li></ol>`,
+   hint:String.raw`<p>(c)(i) Replace \(n\) by \(K\) in the main-attention terms of (b)(ii) and add \(nd_I\) for the indexer. (d) Only \(m(S)\) depends on \(S\); \(-\log\) is decreasing.</p>`,
+   solution:String.raw`<p><b>(c)(i)</b> Cache: \(n(d_c + d_I)\) scalars. Compute: the indexer costs \(nd_I\), and main attention is (b)(ii) with \(n\) replaced by \(K\):</p>
+   $$ C(K) = nd_I + 2Hd_c(d+K). $$
+   <p>Selecting fewer positions does not shrink the cache: every position is kept for future steps, and the search keys add \(nd_I\). Only compute falls.</p>
+   <p><b>(c)(ii)</b> \(C(K) = 100\cdot2 + 2\cdot4\cdot20\,(10+K) = 200 + 160(10+K)\le5000\iff K\le20\). \(C(20) = 5000\) (within budget); \(C(21) = 5160\) (over).</p>
+   <table class="t"><thead><tr><th>Procedure</th><th class="r">Cache (scalars)</th><th class="r">Multiply-adds per step</th><th>Meets both budgets?</th></tr></thead><tbody>
+   <tr><td>Full KV, \(2dHn\) and \(2Hdn\)</td><td class="r">8,000</td><td class="r">8,000</td><td>No (both)</td></tr>
+   <tr><td>MLA over all positions, \(nd_c\) and \(2Hd_c(d+n)\)</td><td class="r">2,000</td><td class="r">17,600</td><td>No (compute)</td></tr>
+   <tr><td>Indexed MLA, \(K = 20\)</td><td class="r">2,200</td><td class="r">5,000</td><td><b>Yes</b></td></tr></tbody></table>
+   <p>Only indexed MLA meets both. The indexer’s score cost is \(nd_I = 200\); selecting \(K\) positions saves \(2Hd_c(n-K) = 160\cdot80 = 12{,}800\) multiply-adds of main attention. The indexer costs \(1/64\) of what it saves; the net reduction is \(17{,}600 - 5{,}000 = 12{,}600\).</p>
+   <p><b>(c)(iii)</b> \(U_K = U_V = 1\) gives \(v_i = c_i\); \(q = 0\) makes every score 0. Full: \(a = (\tfrac12,\tfrac12)\), \(o = \tfrac12\cdot0 + \tfrac12\cdot1 = \tfrac12\). Restricted to \(S = \{1\}\): \(o^S = v_1 = 0\). Selection changes the output, not just the cost; it is an approximation.</p>
+   <p><b>(d)</b> On \(S\), \(a_i^S/a_i = 1/m(S)\), so</p>
+   $$ \mathrm{KL}(a^S\|a) = \sum_{i\in S}\frac{a_i}{m(S)}\log\frac1{m(S)} = -\log m(S). $$
+   <p>If \(m(S)\ge1-\varepsilon\) with \(0\le\varepsilon\lt1\), then \(-\log m(S)\le-\log(1-\varepsilon)\) because \(-\log\) is decreasing on \((0,1]\); \(\varepsilon\lt1\) keeps \(-\log(1-\varepsilon)\) finite.</p>
+   <div class="fix">The submitted write-up called \(-\log\) “decreasing (concave)”. It is decreasing, which is all the argument needs, but it is convex, not concave.</div>
+   <p><b>Best set.</b> Minimising \(-\log m(S)\) means maximising \(m(S)\): take the \(K\) largest weights. Order positions by \((-a_i, i)\) (largest first, smaller index on ties) and let \(S'\) be the first \(K\). For any other size-\(K\) set \(S\) listed in the same order, its \(r\)-th element cannot come before the \(r\)-th position overall, so its weight is at most the \(r\)-th largest weight, the weight of the \(r\)-th element of \(S'\). Summing over \(r = 1,\dots,K\) gives \(m(S)\le m(S')\); with the tie-break, \(S'\) is the unique choice.</p>
+   <p><b>Ranking scores instead of weights.</b> \(a_i = e^{s_{h,i}}/\sum_je^{s_{h,j}}\): the denominator is the same for every \(i\) and \(e^x\) is strictly increasing, so \(a_i\gt a_j\iff s_{h,i}\gt s_{h,j}\) and ties match. Ranking the scores gives the same top \(K\) with no exponentials and no normalising sum.</p>`,
+   after:String.raw`<div data-widget="hw2-topk"></div>`},
+  /* ---------------- Problem 3 ---------------- */
+  {id:'p3', title:'Problem 3: allocating precision in quantization (10 points)', lectures:['l9','l8'], blurb:'the output error splits over rows, a greedy rule is optimal when every upgrade costs the same, and the right rows depend on the calibration data',
+   statement:String.raw`<p>Mixed-precision quantization assigns more bits to some weights than others; this row-allocation problem is motivated by HAWQ-V3. Let \(W\in\mathbb R^{p\times d}\) be a linear layer’s weights and \(X\in\mathbb R^{d\times m}\) contain \(m\) calibration inputs. The error of a quantized matrix \(Q\) is</p>
+   $$ D(Q) = \frac1m\|(Q-W)X\|_F^2,\qquad \|A\|_F^2 = \sum_{i,j}A_{ij}^2 . $$
+   <p>Fix grids \(Q_L\subset Q_H\) with \(2^{b_L}\) and \(2^{b_H}\) values (\(1\le b_L\lt b_H\) integers). Round each entry of \(W\) to the nearest value in each grid (ties toward the smaller value) to get \(Q^L\) and \(Q^H\). For a set of rows \(S\), \(Q(S)\) uses row \(i\) of \(Q^H\) when \(i\in S\) and of \(Q^L\) otherwise. Choose \(S\) to minimise \(D(Q(S))\) subject to the budget in (b).</p>
+   <ol type="a"><li><b>(2 points)</b> Write \(w_i, q_i^L, q_i^H\) for the transposed rows and \(D_i^L = \frac1m\|X^\top(q_i^L - w_i)\|_2^2\), \(D_i^H = \frac1m\|X^\top(q_i^H - w_i)\|_2^2\). Find \(\Delta_i\) with \(D(Q(S)) = D(Q^L) - \sum_{i\in S}\Delta_i\), and prove it by summing squared errors over output rows, with no assumption on correlations in \(X\).</li>
+   <li><b>(5 points)</b> Low-precision weights use \(b_L\) bits, high-precision \(b_H\); grids and one indicator bit per row cost \(C\) bits in total, independent of \(S\); the budget is \(B\ge C + pdb_L\) bits. (i) (1 point) Find the extra storage \(c\) per upgraded row and the largest number \(L\le p\) of upgraded rows. (ii) (2 points) Write pseudocode that starts with \(S = \emptyset\) and traverses rows in decreasing order of \(\Delta_i\) (ties by smaller index), adding a row if and only if it strictly reduces \(D\) and the new set fits; express both conditions with \(\Delta_i\), \(|S|\) and \(L\). (iii) (2 points) Prove the returned set minimises \(D(Q(S))\) over all sets allowed by the budget.</li>
+   <li><b>(3 points)</b> Take \(W = \begin{pmatrix}2/5&0\\0&1/5\end{pmatrix}\), \(Q_L = \{0,1\}\), \(Q_H = \{0,\tfrac13,\tfrac23,1\}\), \(B = C+6\). For \(X_A = I_2\) and \(X_B = \operatorname{diag}(1,3)\), compute \(Q^L\), \(Q^H\), the two benefits and the unique optimal \(S\). Can any deterministic rule that receives \(W\), the grids and the storage parameters, but not \(X\), choose an optimal set for both calibration matrices? Justify.</li></ol>`,
+   hint:String.raw`<p>(a) Row \(i\) of \((Q-W)X\) is \((q_i - w_i)^\top X\). (b)(iii) Every row upgrade costs the same number of bits: use an exchange argument and the identity in (a).</p>`,
+   solution:String.raw`<p><b>(a)</b> Row \(i\) of \((Q(S)-W)X\) is \((q_i(S) - w_i)^\top X\), so summing squared entries row by row,</p>
+   $$ D(Q(S)) = \sum_{i=1}^p\frac1m\|X^\top(q_i(S) - w_i)\|_2^2 = \sum_{i\in S}D_i^H + \sum_{i\notin S}D_i^L = \sum_{i=1}^pD_i^L - \sum_{i\in S}\big(D_i^L - D_i^H\big). $$
+   <p>The same row decomposition with \(S = \emptyset\) gives \(\sum_iD_i^L = D(Q^L)\). Hence \(\Delta_i = D_i^L - D_i^H\). No assumption on \(X\) is needed: correlations between inputs sit inside each row’s own error, and different output rows never interact.</p>
+   <p><b>(b)(i)</b> The grids and indicators cost \(C\) whatever \(S\) is, so the only change is the upgraded weights: \(c = d(b_H - b_L)\). Storage \(C + pdb_L + |S|c\le B\), and there are only \(p\) rows:</p>
+   $$ L = \min\Big\{p,\ \Big\lfloor\frac{B - C - pdb_L}{d(b_H - b_L)}\Big\rfloor\Big\}. $$
+   <p><b>(ii)</b></p>
+   <pre class="code">S = {}
+order = sorted(1..p, key = lambda i: (-Delta[i], i))
+for i in order:
+    if Delta[i] > 0 and |S| < L:     # strictly reduces D, and still fits
+        S.add(i)
+return S</pre>
+   <p><b>(iii)</b> By (a), minimising \(D(Q(S))\) is maximising \(V(S) := \sum_{i\in S}\Delta_i\) subject to \(|S|\le L\), since \(D(Q^L)\) does not depend on \(S\) and every upgrade costs the same. Let \(P\) be the number of rows with \(\Delta_i\gt0\) and \(r = \min(L,P)\). The traversal visits all positive \(\Delta_i\) first, so \(S_{\text{alg}}\) is the first \(r\) rows of the sorted order. Take any feasible \(S'\). Dropping rows with \(\Delta_i\le0\) does not decrease \(V\); then \(|S'|\le r\). If \(|S'|\lt r\), some row of \(S_{\text{alg}}\) is missing; adding it raises \(V\) and stays feasible; repeat until \(|S'| = r\). Now for each \(j\in S'\setminus S_{\text{alg}}\) there is \(i\in S_{\text{alg}}\setminus S'\) with \(\Delta_i\ge\Delta_j\) (because \(S_{\text{alg}}\) is the top \(r\)); swapping changes \(V\) by \(\Delta_i - \Delta_j\ge0\) and increases the overlap by one. After at most \(r\) swaps \(S' = S_{\text{alg}}\), so \(V(S_{\text{alg}})\ge V(S')\) and \(D(Q(S_{\text{alg}}))\le D(Q(S'))\).</p>
+   <p><b>(c)</b> \(b_L = 1\), \(b_H = 2\), \(p = d = m = 2\). Rounding: \(Q^L = \begin{pmatrix}0&0\\0&0\end{pmatrix}\) (2/5 and 1/5 are both closer to 0 than to 1), \(Q^H = \begin{pmatrix}1/3&0\\0&1/3\end{pmatrix}\) (2/5 is 1/15 from 1/3; 1/5 is 2/15 from 1/3 and 1/5 from 0). The low-precision weights use \(pdb_L = 4\) of the 6 bits; an upgrade costs \(c = 2\), so \(L = 1\).</p>
+   <table class="t"><thead><tr><th></th><th class="r">Row 1, X<sub>A</sub></th><th class="r">Row 2, X<sub>A</sub></th><th class="r">Row 1, X<sub>B</sub></th><th class="r">Row 2, X<sub>B</sub></th></tr></thead><tbody>
+   <tr><td>Error (low → high)</td><td class="r">−2/5 → −1/15</td><td class="r">−1/5 → 2/15</td><td class="r">−2/5 → −1/15</td><td class="r">3·(−1/5) → 3·(2/15)</td></tr>
+   <tr><td>\(D^L\)</td><td class="r">4/50</td><td class="r">1/50</td><td class="r">4/50</td><td class="r">9/50</td></tr>
+   <tr><td>\(D^H\)</td><td class="r">1/450</td><td class="r">4/450</td><td class="r">1/450</td><td class="r">36/450</td></tr>
+   <tr><td><b>Benefit \(\Delta\)</b></td><td class="r"><b>7/90</b></td><td class="r"><b>1/90</b></td><td class="r"><b>7/90</b></td><td class="r"><b>9/90</b></td></tr></tbody></table>
+   <p>So \(S^*_{X_A} = \{1\}\) and \(S^*_{X_B} = \{2\}\). No deterministic rule that sees \(W\), the grids and the storage parameters but not \(X\) can be optimal for both: it receives identical inputs in the two cases, so it returns the same set, and the optimal sets differ. Calibration data is not optional: the same weights need different bits depending on the inputs they will multiply (the \(H\) metric of Lecture 9).</p>
+   <div class="fix">The submitted table wrote the benefits as “790, 190, 790, 990”; the fraction bars were lost. They are 7/90, 1/90, 7/90 and 9/90, as above.</div>`,
+   after:String.raw`<div data-widget="hw2-precision"></div>`},
+  /* ---------------- Problem 4 ---------------- */
+  {id:'p4', title:'Problem 4: computing Muon’s matrix normalization (10 points + 2 optional)', lectures:['l3'], blurb:'polar versus scalar normalisation, Newton–Schulz acts on each singular value separately, monotone convergence, and quadratic speed',
+   statement:String.raw`<p>Muon approximately replaces the nonzero singular values of a momentum matrix by 1. Let \(M\in\mathbb R^{m\times n}\), \(m\ge n\), have full column rank, with thin SVD \(M = U\Sigma V^\top\), \(\Sigma = \operatorname{diag}(\sigma_1,\dots,\sigma_n)\), \(\sigma_i\gt0\), \(U^\top U = V^\top V = I_n\). The ideal normalised matrix is the polar factor \(P = UV^\top\). Consider the classical cubic Newton–Schulz iteration</p>
+   $$ X_0 = \frac M{\|M\|_F},\qquad X_{j+1} = \tfrac12X_j\big(3I_n - X_j^\top X_j\big). $$
+   <p>(Muon’s implementation uses a different polynomial and a fixed iteration count.)</p>
+   <ol type="a"><li><b>(2 points)</b> For \(M = \operatorname{diag}(10,1)\), compute \(M/\|M\|_F\) and \(P\). With \(v_1 = (1,0)^\top\), \(v_2 = (0,1)^\top\) and \(\eta\gt0\), let \(\Delta_{\text{scalar}} = -\eta M/\|M\|_F\) and \(\Delta_{\text{polar}} = -\eta P\). For each, compute \(\|\Delta v_1\|_2\), \(\|\Delta v_2\|_2\) and their ratio. Which gives equal update magnitudes in both directions?</li>
+   <li><b>(3 points)</b> Show \(X_j = U\operatorname{diag}(s_{1,j},\dots,s_{n,j})V^\top\) with the same \(U, V\); derive the scalar recurrence and initial value, and show every initial value lies in \((0,1]\).</li>
+   <li><b>(3 points)</b> Prove that a scalar sequence following this recurrence from \((0,1]\) stays in \((0,1]\), is nondecreasing and converges to 1; deduce \(X_j\to P\). (Hint: with \(f\) the update, examine \(f(s) - s\) and \(1 - f(s)\).)</li>
+   <li><b>(2 points)</b> Now \(M\ne0\) has rank \(r\lt n\) (\(\sigma_{r+1} = \dots = \sigma_n = 0\)). Determine the limit of \(X_j\). Does it have orthonormal columns? Explain why an initially zero singular value remains zero.</li>
+   <li><b>(2 optional points)</b> For a positive singular-value sequence, let \(e_j = 1 - s_j\). Derive a recurrence for \(e_j\); show that once \(e_j\le\tfrac12\), \(e_{j+1}\le\tfrac32e_j^2\). For \(0\lt s_0\lt1\), compute \(\lim e_{j+1}/e_j^2\). If \(s_0 = 1\), give \(s_j\) and \(e_j\) in closed form.</li></ol>`,
+   hint:String.raw`<p>(b) Induction: if \(X_j = US_jV^\top\) then \(X_j^\top X_j = VS_j^2V^\top\). (c) \(f(s) - s = s(1-s^2)/2\) and \(1 - f(s) = (s+2)(s-1)^2/2\).</p>`,
+   solution:String.raw`<p><b>(a)</b> \(\|M\|_F = \sqrt{101}\), so \(M/\|M\|_F = \operatorname{diag}(10,1)/\sqrt{101}\). \(M = I_2\operatorname{diag}(10,1)I_2^\top\) is already an SVD, so \(P = I_2\).</p>
+   <table class="t"><thead><tr><th></th><th class="r">\(\|\Delta v_1\|\)</th><th class="r">\(\|\Delta v_2\|\)</th><th class="r">Ratio</th></tr></thead><tbody>
+   <tr><td>Scalar</td><td class="r">\(10\eta/\sqrt{101}\)</td><td class="r">\(\eta/\sqrt{101}\)</td><td class="r">10</td></tr>
+   <tr><td>Polar</td><td class="r">\(\eta\)</td><td class="r">\(\eta\)</td><td class="r">1</td></tr></tbody></table>
+   <p>Polar normalisation gives equal magnitudes; scalar normalisation keeps the 10 : 1 imbalance because it rescales all singular values by the same factor instead of setting each to 1 (Lecture 3’s spectral-norm steepest descent).</p>
+   <p><b>(b)</b> Base case: \(\|M\|_F^2 = \operatorname{tr}(M^\top M) = \operatorname{tr}(V\Sigma^2V^\top) = \operatorname{tr}(\Sigma^2) = \sum_k\sigma_k^2\), so \(X_0 = U\operatorname{diag}(s_{1,0},\dots)V^\top\) with \(s_{i,0} = \sigma_i/\sqrt{\sum_k\sigma_k^2}\). Inductive step: if \(X_j = US_jV^\top\), then \(X_j^\top X_j = VS_j^2V^\top\) and \(3I_n - X_j^\top X_j = V(3I_n - S_j^2)V^\top\), so</p>
+   $$ X_{j+1} = \tfrac12US_jV^\top V(3I_n - S_j^2)V^\top = U\Big(\tfrac12S_j(3I_n - S_j^2)\Big)V^\top,\qquad s_{i,j+1} = \frac{3s_{i,j} - s_{i,j}^3}2 . $$
+   <p>Initial values: \(s_{i,0}\gt0\) since \(\sigma_i\gt0\); and \(\sigma_i^2\le\sum_k\sigma_k^2\) gives \(s_{i,0}\le1\).</p>
+   <p><b>(c)</b> With \(f(s) = (3s - s^3)/2\): \(f(s) - s = s(1-s^2)/2\ge0\) and \(1 - f(s) = (s+2)(s-1)^2/2\ge0\) on \((0,1]\). So \(s\le f(s)\le1\), and by induction \(0\lt s_0\le s_1\le\dots\le1\). A nondecreasing bounded sequence converges to some \(\ell\in[s_0,1]\), so \(\ell\gt0\); continuity of \(f\) gives \(\ell = f(\ell)\), i.e. \(\ell(1-\ell^2) = 0\), so \(\ell\in\{-1,0,1\}\) and \(\ell = 1\). Every \(s_{i,j}\to1\), and since multiplying by \(U\) and \(V^\top\) preserves the Frobenius norm, \(\|X_j - P\|_F = \|S_j - I_n\|_F = \sqrt{\sum_i(s_{i,j}-1)^2}\to0\).</p>
+   <p><b>(d)</b> \(s_{i,0} = 0\) for \(i\gt r\), and \(f(0) = 0\), so those values stay 0; the first \(r\) go to 1 by (c). In matrix terms, if \(X_jv = 0\) then \(X_{j+1}v = \tfrac12X_j(3v - X_j^\top X_jv) = 0\): the iteration only multiplies \(X_j\) by matrices, so it can never revive a direction \(X_j\) sends to zero. The limit is \(U\operatorname{diag}(1,\dots,1,0,\dots,0)V^\top = U_rV_r^\top\), with \(U_r, V_r\) the first \(r\) columns. It does not have orthonormal columns: \((U_rV_r^\top)^\top U_rV_r^\top = V_rV_r^\top\), a rank-\(r\) projection, not \(I_n\).</p>
+   <p><b>(e)</b> From (c), \(e_{j+1} = 1 - f(s_j) = (s_j+2)(1-s_j)^2/2 = e_j^2(3 - e_j)/2\). Since \(e_j\ge0\), \(3 - e_j\le3\) and \(e_{j+1}\le\tfrac32e_j^2\); once \(e_j\le\tfrac12\), also \(e_{j+1}\le\tfrac34e_j\), so the error shrinks every step. For \(0\lt s_0\lt1\), every \(e_j\in(0,1)\) and \(e_j\to0\), so \(e_{j+1}/e_j^2 = (3-e_j)/2\to\tfrac32\): quadratic convergence. If \(s_0 = 1\), then \(f(1) = 1\), so \(s_j = 1\) and \(e_j = 0\) for all \(j\).</p>`,
+   after:String.raw`<div data-widget="hw2-ns"></div>`}
+  ]
+});
+</script>
+
 <script>
 /* =====================================================================
    5. WIDGETS — widget('name', (el, opts) => {...})
@@ -4197,6 +4506,267 @@ widget('paged-kv',(el)=>{
   draw();
 });
 </script>
+<script>
+/* ---- Lecture 11: post-training widgets ---- */
+widget('icl-loop',(el)=>{
+  box(el,'In-context learning','Demonstrations in the prompt; the model completes a new query. The weights never change.');
+  const D=[['c#a!t','cat'],['d@o#g','dog'],['b!i@r#d','bird']], Qn=['h%o!r@s#e','horse'];
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%9; svg.setAttribute('viewBox','0 0 680 210'); svg.classList.add('chart'); svg.innerHTML='';
+    D.forEach(([a,b],i)=>{ if(tt<.5+i*.8) return; const y=20+i*38; svg.append(s('text',{x:40,y:y+18,'font-size':15,'font-family':'ui-monospace,Menlo,monospace'},a)); svg.append(s('text',{x:200,y:y+18,'font-size':15},'→')); svg.append(s('text',{x:240,y:y+18,'font-size':15,'font-weight':700,fill:'#0F766E'},b)); });
+    if(tt>3){ const y=146; svg.append(s('rect',{x:30,y:y-4,width:330,height:34,rx:6,fill:'#F6E6E6',stroke:'#9B1C1C'})); svg.append(s('text',{x:40,y:y+18,'font-size':15,'font-family':'ui-monospace,Menlo,monospace'},Qn[0])); svg.append(s('text',{x:200,y:y+18,'font-size':15},'→'));
+      const k=Math.max(0,Math.min(Qn[1].length,Math.floor((tt-4)*3))); svg.append(s('text',{x:240,y:y+18,'font-size':15,'font-weight':700,fill:'#9B1C1C'},Qn[1].slice(0,k)+(k<Qn[1].length&&tt>4?'▍':''))); }
+    svg.append(s('rect',{x:420,y:40,width:220,height:110,rx:10,fill:'#EEF1F4',stroke:'#9AA6B4'})); svg.append(s('text',{x:530,y:88,'text-anchor':'middle','font-size':13,'font-weight':600},'model weights θ')); svg.append(s('text',{x:530,y:108,'text-anchor':'middle','font-size':12,fill:'#4A5568'},'fixed: no update'));
+    cap.innerHTML= tt<3? 'Demonstrations go into the prompt.' : tt<4? 'A new query in the same format.' : 'The model infers the task (remove the symbols) from context alone. Prompting can guide the continuation, but InstructGPT, trained on demonstrations and feedback, was still preferred to few-shot GPT-3 in 71 ± 4% of comparisons.'; });
+});
+
+widget('sft-mask',(el)=>{
+  box(el,'Which predictions enter the SFT loss?','Each target token has a loss mask: 1 = include −log p in the loss, 0 = exclude. Probabilities are illustrative. Toggle the mask to see what changes.');
+  const EX={apollo:{rows:[['prompt','Where'],['prompt','did'],['prompt','Apollo'],['prompt','11'],['prompt','land?'],['resp','On'],['resp','the'],['resp','Moon'],['resp','<end>']],p:[.02,.1,.01,.4,.2,.35,.7,.6,.8]},
+    tool:{rows:[['user','Mean of [2, 4, 9]?'],['assistant','calculator((2+4+9)/3)'],['tool','5'],['assistant','The mean is 5.']],p:[.05,.3,.02,.5]}};
+  let ex='apollo', maskPrompt=true; const c=h('div',{class:'ctrls'}); el.append(c);
+  seg(c,[{label:'Apollo 11 example',value:'apollo'},{label:'Tool-call conversation',value:'tool'}],ex,v=>{ex=v;draw();},'Example');
+  seg(c,[{label:'Mask the prompt / non-assistant turns',value:true},{label:'Train on every token',value:false}],true,v=>{maskPrompt=v;draw();},'Mask');
+  const out=h('div'); el.append(out);
+  function draw(){ const E=EX[ex]; let tot=0, n=0;
+    const rows=E.rows.map(([role,tok],i)=>{ const isResp=role==='resp'||role==='assistant'; const m=maskPrompt?(isResp?1:0):1; const l=-Math.log(E.p[i]); if(m){tot+=l;n++;}
+      return `<tr style="${m?'':'opacity:.5'}"><td>${role}</td><td style="font-family:ui-monospace,Menlo,monospace">${tok.replace(/</g,'&lt;')}</td><td class="r">${E.p[i].toFixed(2)}</td><td class="r">${l.toFixed(2)}</td><td class="r"><b style="color:${m?'#0F766E':'#9B1C1C'}">${m}</b></td></tr>`; }).join('');
+    out.innerHTML=`<table class="t"><thead><tr><th>Role</th><th>Target</th><th class="r">p_θ(target | context)</th><th class="r">−log p</th><th class="r">mask</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="readout">Loss = average of the included terms = <b>${(tot/n).toFixed(3)}</b> over ${n} target${n>1?'s':''}. ${maskPrompt?(ex==='tool'?'The model is trained on what the assistant writes, including its tool call, and only observes the user’s message and the tool’s result.':'Only the response tokens are imitated. The response loss still flows back through the parameters that read the prompt.'):'Training on the prompt too teaches the model to imitate users and tools, which is not the behaviour we want.'}</div>`; }
+  draw();
+});
+
+widget('length-weight',(el)=>{
+  box(el,'How much does each response count?','Two demonstrations of different lengths. Averaging over all tokens lets long answers dominate; averaging each response first weights them equally.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const a=slider(c,{label:'Short response (tokens)',min:1,max:500,step:1,value:10,oninput:draw});
+  const b=slider(c,{label:'Long response (tokens)',min:10,max:4000,step:10,value:1000,oninput:draw});
+  function draw(){ const A=a.get(), B=b.get(); const tokA=A/(A+B);
+    svg.setAttribute('viewBox','0 0 640 120'); svg.classList.add('chart'); svg.innerHTML='';
+    [['average over all tokens',tokA],['average of the two response means',.5]].forEach(([l,v],i)=>{ const y=14+i*48; svg.append(s('text',{x:225,y:y+18,'text-anchor':'end','font-size':12},l)); svg.append(s('rect',{x:235,y,width:v*380,height:28,fill:'#0F766E'})); svg.append(s('rect',{x:235+v*380,y,width:(1-v)*380,height:28,fill:'#B45309'})); svg.append(s('text',{x:239,y:y+19,'font-size':11.5,fill:'#fff','font-weight':600},(v*100).toFixed(v<.1?1:0)+'%')); svg.append(s('text',{x:611,y:y+19,'font-size':11.5,fill:'#fff','font-weight':600,'text-anchor':'end'},((1-v)*100).toFixed(1-v<.1?1:0)+'%')); });
+    ro.innerHTML=`Teal: short response (${A} tokens). Orange: long response (${B} tokens). Token-averaging gives the short answer ${(tokA*100).toFixed(1)}% of the weight. The slides’ case (10 and 1,000) is about 1% against 99%. Neither choice is “right”; it decides how much long answers shape the model.`; }
+  draw();
+});
+
+widget('lowrank',(el)=>{
+  box(el,'A rank-one change has one output direction','Δh = b(aᵀx). Left: inputs on the unit circle. Right: their output changes, which all lie on the line through b. Drag the vectors.');
+  const v={a1:1,a2:-2,b1:1,b2:2,th:0}; const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  [['a₁','a1'],['a₂','a2']].forEach(([l,k])=>slider(c,{label:l,min:-2,max:2,step:.1,value:v[k],fmt:x=>x.toFixed(1),oninput:x=>{v[k]=x;draw();}}));
+  [['b₁','b1'],['b₂','b2']].forEach(([l,k])=>slider(c,{label:l,min:-2,max:2,step:.1,value:v[k],fmt:x=>x.toFixed(1),oninput:x=>{v[k]=x;draw();}}));
+  slider(c2,{label:'Input direction x',min:0,max:360,step:1,value:0,fmt:x=>x+'°',oninput:x=>{v.th=x;draw();}});
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function draw(){ svg.setAttribute('viewBox','0 0 680 270'); svg.classList.add('chart'); svg.innerHTML='';
+    const P=(cx,cy,S)=>[x=>cx+x*S,y=>cy-y*S]; const [X1,Y1]=P(150,135,90), [X2,Y2]=P(500,135,22);
+    svg.append(s('text',{x:20,y:18,'font-size':12,'font-weight':600},'input x (unit circle)')); svg.append(s('text',{x:370,y:18,'font-size':12,'font-weight':600},'output change Δh = b(aᵀx)'));
+    svg.append(s('circle',{cx:X1(0),cy:Y1(0),r:90,fill:'none',stroke:'#D3D9E0'}));
+    const bl=Math.hypot(v.b1,v.b2)||1; svg.append(s('line',{x1:X2(-6*v.b1/bl),y1:Y2(-6*v.b2/bl),x2:X2(6*v.b1/bl),y2:Y2(6*v.b2/bl),stroke:'#E6EAEE','stroke-width':6}));
+    for(let k=0;k<48;k++){ const t=k/48*2*Math.PI, x=[Math.cos(t),Math.sin(t)], co=v.a1*x[0]+v.a2*x[1]; svg.append(s('circle',{cx:X1(x[0]),cy:Y1(x[1]),r:2.5,fill:'#9AA6B4'})); svg.append(s('circle',{cx:X2(v.b1*co),cy:Y2(v.b2*co),r:2.5,fill:'#9AA6B4'})); }
+    const t=v.th*Math.PI/180, x=[Math.cos(t),Math.sin(t)], co=v.a1*x[0]+v.a2*x[1], dh=[v.b1*co,v.b2*co];
+    svg.append(s('line',{x1:X1(0),y1:Y1(0),x2:X1(x[0]),y2:Y1(x[1]),stroke:'#0F766E','stroke-width':3})); svg.append(s('line',{x1:X1(0),y1:Y1(0),x2:X1(v.a1/Math.max(1,Math.hypot(v.a1,v.a2))),y2:Y1(v.a2/Math.max(1,Math.hypot(v.a1,v.a2))),stroke:'#B45309','stroke-width':2,'stroke-dasharray':'4 3'}));
+    svg.append(s('text',{x:X1(v.a1/Math.max(1,Math.hypot(v.a1,v.a2)))+6,y:Y1(v.a2/Math.max(1,Math.hypot(v.a1,v.a2))),'font-size':11,fill:'#B45309'},'a (direction)'));
+    svg.append(s('line',{x1:X2(0),y1:Y2(0),x2:X2(dh[0]),y2:Y2(dh[1]),stroke:'#9B1C1C','stroke-width':3})); svg.append(s('line',{x1:X2(0),y1:Y2(0),x2:X2(v.b1),y2:Y2(v.b2),stroke:'#B45309','stroke-width':2,'stroke-dasharray':'4 3'})); svg.append(s('text',{x:X2(v.b1)+6,y:Y2(v.b2),'font-size':11,fill:'#B45309'},'b'));
+    ro.innerHTML=`x = (${x[0].toFixed(2)}, ${x[1].toFixed(2)}): coefficient aᵀx = <b>${co.toFixed(2)}</b>, Δh = (${dh[0].toFixed(2)}, ${dh[1].toFixed(2)}). Every input’s change lands on the line through b (grey band), so a rank-one update cannot send one input to (1, 0) and another to (0, 1). Rank r allows r directions: Δh = Σⱼ bⱼ(aⱼᵀx).`; }
+  draw();
+});
+
+widget('lora-init',(el)=>{
+  box(el,'Why A random, B = 0','A toy LoRA fit of a rank-1 target change, by gradient descent. Bars show the gradient sizes ‖∇_A‖ and ‖∇_B‖; the curve is the loss. Teal: A random, B = 0. Grey: both zero.');
+  const m=6,n=6,r=1, R=seeded(4), g=()=>{ let u=R()||1e-9,v2=R(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v2); };
+  const bt=[...Array(m)].map(g), at=[...Array(n)].map(g); const T=bt.map(x=>at.map(y=>x*y*.4));
+  function run(init){ let A=init==='rand'?[[...Array(n)].map(()=>g()*.3)]:[[...Array(n)].fill(0)], B=[...Array(m)].map(()=>[0]); const hist=[];
+    for(let k=0;k<60;k++){ const BA=B.map(bi=>A[0].map(a=>bi[0]*a)); const G=BA.map((row,i)=>row.map((x,j)=>x-T[i][j])); const loss=G.flat().reduce((s0,x)=>s0+x*x,0)/2;
+      const gA=[A[0].map((_,j)=>B.reduce((s0,bi,i)=>s0+bi[0]*G[i][j],0))], gB=B.map((_,i)=>[G[i].reduce((s0,x,j)=>s0+x*A[0][j],0)]);
+      hist.push({loss,gA:Math.hypot(...gA[0]),gB:Math.hypot(...gB.map(x=>x[0]))}); A=[A[0].map((a,j)=>a-.15*gA[0][j])]; B=B.map((bi,i)=>[bi[0]-.15*gB[i][0]]); } return hist; }
+  const H1=run('rand'), H0=run('zero');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const k=Math.min(59,Math.floor((t%9)/8*60)); svg.setAttribute('viewBox','0 0 680 250'); svg.classList.add('chart'); svg.innerHTML='';
+    const L0=H1[0].loss; const X=i=>250+i/59*410, Y=l=>210-l/L0*170;
+    svg.append(s('line',{x1:250,x2:660,y1:210,y2:210,stroke:'#1B2433'})); svg.append(s('text',{x:455,y:232,'text-anchor':'middle','font-size':11},'training step'));
+    svg.append(s('path',{d:H0.slice(0,k+1).map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.loss)).join(''),fill:'none',stroke:'#9AA6B4','stroke-width':2.5}));
+    svg.append(s('path',{d:H1.slice(0,k+1).map((p,i)=>(i?'L':'M')+X(i)+' '+Y(p.loss)).join(''),fill:'none',stroke:'#0F766E','stroke-width':2.5}));
+    svg.append(s('text',{x:256,y:30,'font-size':11.5,'font-weight':600},'loss ½‖BA − ΔW_target‖²'));
+    const mx=Math.max(...H1.map(p=>Math.max(p.gA,p.gB)));
+    [['‖∇_A‖ = ‖BᵀG‖',H1[k].gA,'#0F766E'],['‖∇_B‖ = ‖GAᵀ‖',H1[k].gB,'#0F766E'],['both zero: ‖∇_A‖',H0[k].gA,'#9AA6B4'],['both zero: ‖∇_B‖',H0[k].gB,'#9AA6B4']].forEach(([l,v2,col],i)=>{ const y=30+i*44; svg.append(s('text',{x:10,y:y+4,'font-size':11},l)); svg.append(s('rect',{x:10,y:y+10,width:Math.max(1.5,v2/mx*200),height:16,rx:3,fill:col})); });
+    cap.innerHTML= k===0? 'Step 0: B = 0, so BA = 0 (the model starts exactly at the base) and ∇_A = BᵀG = 0. But A is random, so ∇_B = GAᵀ ≠ 0.' : k<6? `Step ${k}: B has moved, so A now receives gradients too.` : `Step ${k}: the random-A start fits the target change; the both-zero start never moves (both gradients stay exactly 0).`; });
+});
+
+widget('lora-counts',(el)=>{
+  box(el,'What LoRA saves for one matrix','Trainable entries, the optimizer state that comes with them (gradient + Adam’s two moments), and per-token compute of the added branch.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const ro=h('div'); el.append(ro);
+  const M=slider(c,{label:'m (output width)',min:8,max:15,step:1,value:12,fmt:v=>(2**v).toLocaleString(),oninput:draw});
+  const N=slider(c,{label:'n (input width)',min:8,max:15,step:1,value:12,fmt:v=>(2**v).toLocaleString(),oninput:draw});
+  const r=slider(c,{label:'rank r',min:0,max:8,step:1,value:3,fmt:v=>2**v,oninput:draw});
+  function draw(){ const m=2**M.get(), n=2**N.get(), R=2**r.get(); const full=m*n, lo=R*(m+n);
+    const row=(l,a,b)=>`<tr><td>${l}</td><td class="r">${a.toLocaleString()}</td><td class="r">${b.toLocaleString()}</td></tr>`;
+    ro.innerHTML=`<table class="t"><thead><tr><th></th><th class="r">Full fine-tuning</th><th class="r">LoRA, r = ${R}</th></tr></thead><tbody>
+      ${row('Trainable entries',full,lo)}${row('Weight gradients',full,lo)}${row('Adam first + second moments',2*full,2*lo)}${row('Training state, total (4×)',4*full,4*lo)}${row('Extra multiply-adds per token (branch)',0,R*(n+m))}${row('Base multiply-adds per token',full,full)}</tbody></table>
+      <div class="readout"><b>${(full/lo).toFixed(full/lo<10?1:0)}×</b> fewer trainable entries. The frozen base W₀ (${full.toLocaleString()} entries) and its forward computation remain; the branch adds ${(R*(n+m)/full*100).toFixed(2)}% to this layer’s compute. The slides’ case: m = n = 4,096, r = 8 gives 16,777,216 versus 65,536, 256×.</div>`; }
+  draw();
+});
+
+widget('lora-merge',(el)=>{
+  box(el,'Training with the branch, then merging it away','During training: h = W₀x + B(Ax), with W₀ frozen. After training: W_merged = W₀ + BA, one dense multiplication.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%10, merged=tt>5.5; svg.setAttribute('viewBox','0 0 680 210'); svg.classList.add('chart'); svg.innerHTML='';
+    const bx=(x,y,w,hh,l,sub,col,on)=>{ svg.append(s('rect',{x,y,width:w,height:hh,rx:7,fill:on?col+'22':'#fff',stroke:col,'stroke-width':on?2.5:1.4})); svg.append(s('text',{x:x+w/2,y:y+hh/2+(sub?-2:4),'text-anchor':'middle','font-size':12.5,'font-weight':600},l)); if(sub) svg.append(s('text',{x:x+w/2,y:y+hh/2+13,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},sub)); };
+    svg.append(s('text',{x:20,y:105,'font-size':14,'font-weight':700},'x'));
+    if(!merged){ bx(70,30,170,52,'W₀','frozen, m × n','#64748B',false); bx(70,120,80,52,'A','r × n','#9B1C1C',tt%1.5<.75); bx(170,120,80,52,'B','m × r','#9B1C1C',tt%1.5>=.75);
+      svg.append(s('path',{d:'M35 100 L70 56 M35 100 L70 146 M150 146 H170',stroke:'#1B2433',fill:'none','stroke-width':1.5}));
+      svg.append(s('circle',{cx:300,cy:100,r:14,fill:'#fff',stroke:'#1B2433'})); svg.append(s('text',{x:300,y:105,'text-anchor':'middle','font-size':16},'+'));
+      svg.append(s('path',{d:'M240 56 L288 92 M250 146 L288 108 M314 100 H360',stroke:'#1B2433',fill:'none','stroke-width':1.5}));
+      svg.append(s('text',{x:160,y:196,'text-anchor':'middle','font-size':11,fill:'#9B1C1C'},'z = Ax (r numbers), then Δh = Bz'));
+      const dots=(tt*90)%120; svg.append(s('circle',{cx:150+Math.min(20,dots/6),cy:146,r:4,fill:'#9B1C1C'}));
+    } else { bx(70,70,260,60,'W_merged = W₀ + BA','one dense m × n matrix','#0F766E',true); svg.append(s('path',{d:'M35 100 H70 M330 100 H360',stroke:'#1B2433','stroke-width':1.5})); }
+    svg.append(s('text',{x:370,y:105,'font-size':14,'font-weight':700},'h'));
+    const fo=document.createElementNS(SVGNS,'foreignObject'); fo.setAttribute('x',410); fo.setAttribute('y',30); fo.setAttribute('width',260); fo.setAttribute('height',160);
+    fo.innerHTML=`<div xmlns="http://www.w3.org/1999/xhtml" style="font:13px var(--sans);line-height:1.5;color:#1B2433">${merged?'<b>Inference.</b> Fold BA into W₀ once. No extra branch, no extra latency. Swap adapters by keeping several (A, B) pairs and merging the one you need.':'<b>Training.</b> Gradients and Adam state only for A and B. The branch costs O(rn + mr) per token; the dense product BA is never formed.'}</div>`; svg.append(fo);
+    cap.innerHTML=merged?'After training: merged.':'During training: base path plus a low-rank branch.'; });
+});
+
+widget('bt-pref',(el)=>{
+  box(el,'From score differences to choices','The reward model scores each answer; the predicted preference is σ(r_B − r_A). Training on the label “B ≻ A” lowers ℓ = −log σ(r_B − r_A) by raising B’s score relative to A’s.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const ra=slider(c,{label:'r(A): technical answer',min:-4,max:6,step:.1,value:1,fmt:v=>v.toFixed(1),oninput:draw});
+  const rb=slider(c,{label:'r(B): answer for a child',min:-4,max:6,step:.1,value:3,fmt:v=>v.toFixed(1),oninput:draw});
+  c.append(h('button',{class:'btn',type:'button',onclick:()=>{ const d=rb.get()-ra.get(); const gr=1-1/(1+Math.exp(-d)); ra.set(+(ra.get()-.5*gr).toFixed(1)); rb.set(+(rb.get()+.5*gr).toFixed(1)); draw(); }},'One gradient step on “B ≻ A”'));
+  function draw(){ const d=rb.get()-ra.get(), p=1/(1+Math.exp(-d)); const xs=[...Array(81).keys()].map(i=>-8+i/5);
+    chart(svg,{w:640,h:230,x:{min:-8,max:8,label:'score difference r(B) − r(A)'},y:{min:0,max:1,label:'P(B ≻ A)'},series:[{pts:xs.map(z=>[z,1/(1+Math.exp(-z))]),color:'#0F766E'}],marks:[{x:d,y:p,label:`σ(${d.toFixed(1)}) = ${p.toFixed(3)}`}],hlines:[{y:.5,color:'#9AA6B4'}]});
+    ro.innerHTML=`Predicted P(B ≻ A) = <b>${p.toFixed(3)}</b>; loss on the label “B ≻ A” = −log σ = <b>${(-Math.log(p)).toFixed(3)}</b>. Gradient: ∂ℓ/∂r(B) = −(1 − σ) = ${(-(1-p)).toFixed(3)}, ∂ℓ/∂r(A) = +${(1-p).toFixed(3)}. Shift both scores by the same amount and nothing changes: only differences matter. Slides’ case: scores 1 and 3 give ≈ 0.88.`; }
+  draw();
+});
+
+widget('pg-loop',(el)=>{
+  box(el,'Policy gradient on the Moon answers, with and without a baseline','Two answers: A (technical, reward 1) and B (for a child, reward 3). Each step samples an answer, then nudges its log-probability by its weight. Thin lines: several independent runs. Left: weight = reward. Right: weight = reward − baseline (running mean).');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  const RUNS=8, STEPS=80, lr=.15; let cyc=-1, traj;
+  function sim(base){ return [...Array(RUNS)].map(()=>{ let z=0, b=2, out=[]; for(let k=0;k<STEPS;k++){ const pB=1/(1+Math.exp(-z)); out.push(pB); const pickB=Math.random()<pB; const r=pickB?3:1; const w=base?r-b:r; const glog=pickB?(1-pB):-pB; z+=lr*w*glog; if(base) b=.9*b+.1*r; } return out; }); }
+  loopAnim(el,t=>{ const c=Math.floor(t/10); if(c!==cyc){ cyc=c; traj=[sim(false),sim(true)]; } const k=Math.min(STEPS-1,Math.floor((t%10)/9*STEPS));
+    svg.setAttribute('viewBox','0 0 680 250'); svg.classList.add('chart'); svg.innerHTML='';
+    [['weight = reward',0],['weight = reward − baseline',1]].forEach(([ttl,j])=>{ const ox=20+j*340, X=i=>ox+30+i/(STEPS-1)*280, Y=p=>210-p*180;
+      svg.append(s('text',{x:ox,y:16,'font-size':12,'font-weight':600},ttl)); svg.append(s('line',{x1:ox+30,x2:ox+310,y1:210,y2:210,stroke:'#1B2433'})); svg.append(s('line',{x1:ox+30,x2:ox+30,y1:30,y2:210,stroke:'#1B2433'}));
+      [0,.5,1].forEach(p=>svg.append(s('text',{x:ox+24,y:Y(p)+4,'text-anchor':'end','font-size':10.5},p)));
+      svg.append(s('line',{x1:ox+30,x2:ox+310,y1:Y(.8),y2:Y(.8),stroke:'#E6EAEE','stroke-dasharray':'3 3'}));
+      traj[j].forEach(run=>svg.append(s('path',{d:run.slice(0,k+1).map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p).toFixed(1)).join(''),fill:'none',stroke:j?'#0F766E':'#B45309','stroke-width':1.3,opacity:.75})));
+      svg.append(s('text',{x:ox+170,y:238,'text-anchor':'middle','font-size':11},'P(B) over training steps')); });
+    const spread=j=>{ const v=traj[j].map(r=>r[k]); const m=v.reduce((a,b)=>a+b,0)/v.length; return Math.sqrt(v.reduce((a,b)=>a+(b-m)**2,0)/v.length); };
+    const er=j=>{ const v=traj[j].map(r=>r[k]); const m=v.reduce((a,b)=>a+b,0)/v.length; return 1+2*m; };
+    cap.innerHTML=`Step ${k+1}. Expected reward: ${er(0).toFixed(2)} (no baseline) vs ${er(1).toFixed(2)} (baseline); spread of P(B) across runs ${spread(0).toFixed(3)} vs ${spread(1).toFixed(3)}. With raw rewards every sample pushes its own answer up (both rewards are positive), so progress relies on B being pushed harder; centring makes A’s samples push A down, a cleaner signal with the same expected gradient.`; });
+});
+
+widget('kl-ref',(el)=>{
+  box(el,'Reward versus staying close to the reference','Five candidate answers with reference probabilities π_ref and reward-model scores r. The KL-regularised optimum is π*(y) ∝ π_ref(y)·exp(r(y)/β).');
+  const Y=['A: technical','B: for a child','C: short and vague','D: long, padded','E: off-topic'], ref=[.3,.25,.25,.15,.05], rw=[1,3,1.5,3.4,-1];
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const b=slider(c,{label:'β (KL strength)',min:-2,max:1.5,step:.02,value:0,fmt:v=>(10**v).toFixed(2),oninput:draw});
+  function draw(){ const beta=10**b.get(); const u=ref.map((p,i)=>p*Math.exp(rw[i]/beta)); const Z=u.reduce((a,x)=>a+x,0); const pi=u.map(x=>x/Z);
+    const Er=pi.reduce((a,p,i)=>a+p*rw[i],0), KL=pi.reduce((a,p,i)=>a+(p>1e-12?p*Math.log(p/ref[i]):0),0);
+    svg.setAttribute('viewBox','0 0 680 220'); svg.classList.add('chart'); svg.innerHTML='';
+    Y.forEach((l,i)=>{ const y=12+i*40; svg.append(s('text',{x:150,y:y+17,'text-anchor':'end','font-size':12},l)); svg.append(s('text',{x:150,y:y+31,'text-anchor':'end','font-size':10.5,fill:'#4A5568'},`r = ${rw[i]}`));
+      svg.append(s('rect',{x:160,y:y+2,width:ref[i]*440,height:12,fill:'#C9CED6'})); svg.append(s('rect',{x:160,y:y+16,width:pi[i]*440,height:14,fill:'#9B1C1C'})); svg.append(s('text',{x:166+pi[i]*440,y:y+28,'font-size':11},pi[i].toFixed(3))); });
+    ro.innerHTML=`β = ${beta.toFixed(2)}: expected reward <b>${Er.toFixed(2)}</b>, KL(π* ‖ π_ref) = <b>${KL.toFixed(2)}</b> nats. Grey: π_ref; red: π*. Large β stays near the SFT model; small β piles onto the highest score, here the padded answer D, which the reward model slightly prefers. If that preference is a reward-model error, small β exploits it.`; }
+  draw();
+});
+
+widget('overopt',(el)=>{
+  box(el,'Over-optimising a proxy reward (a toy Gao et al.)','400 candidate answers with true quality g. The proxy reward model sees g plus an error: small for most answers, but a few (4%) exploit a blind spot of the proxy, which over-scores them although their true quality is poor. Optimising the proxy harder (smaller β) moves the policy further from the start, measured by √KL. The proxy keeps rising; the true quality peaks, then falls.');
+  const n=400; const R=seeded(17), gg=()=>{ let u=R()||1e-9,v=R(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+  const big=[...Array(n)].map(()=>R()<.04); const g=[...Array(n)].map((_,i)=>big[i]?gg()*.5-1.5:gg()), e=[...Array(n)].map((_,i)=>big[i]?1.5+Math.abs(gg())*1.5:gg()*.3);
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const noise=slider(c,{label:'Proxy error (smaller reward model → larger)',min:0,max:2.5,step:.05,value:1.5,fmt:v=>v.toFixed(2),oninput:draw});
+  const opt=slider(c,{label:'Optimisation pressure 1/β',min:-1,max:1.6,step:.02,value:.4,fmt:v=>(10**v).toFixed(2),oninput:draw});
+  function stats(beta,sd){ const pr=g.map((x,i)=>x+sd*e[i]); const lu=pr.map(x=>x/beta); const mx=Math.max(...lu); const u=lu.map(x=>Math.exp(x-mx)); const Z=u.reduce((a,b)=>a+b,0); const p=u.map(x=>x/Z);
+    return {kl:p.reduce((a,q)=>a+(q>1e-15?q*Math.log(q*n):0),0), proxy:p.reduce((a,q,i)=>a+q*pr[i],0), gold:p.reduce((a,q,i)=>a+q*g[i],0)}; }
+  function draw(){ const sd=noise.get(); const pts=[]; for(let k=-1;k<=1.6;k+=.02){ const S0=stats(1/10**k,sd); pts.push([Math.sqrt(S0.kl),S0.proxy,S0.gold]); }
+    const cur=stats(1/10**opt.get(),sd); const xmax=Math.max(...pts.map(p=>p[0]))*1.02;
+    chart(svg,{w:640,h:250,x:{min:0,max:xmax,label:'√KL from the starting (uniform) policy'},y:{min:Math.min(-.2,...pts.map(p=>p[2]))-.1,max:Math.max(...pts.map(p=>p[1]))+.2,label:'expected score'},
+      series:[{pts:pts.map(p=>[p[0],p[1]]),color:'#B45309',dash:'5 4',label:'proxy reward (what is optimised)'},{pts:pts.map(p=>[p[0],p[2]]),color:'#0F766E',label:'true quality (the evaluator)'}],legend:true,
+      marks:[{x:Math.sqrt(cur.kl),y:cur.gold,color:'#0F766E'},{x:Math.sqrt(cur.kl),y:cur.proxy,color:'#B45309'}]});
+    const best=pts.reduce((a,b)=>b[2]>a[2]?b:a);
+    ro.innerHTML=`At this pressure: proxy ${cur.proxy.toFixed(2)}, true ${cur.gold.toFixed(2)}, √KL ${Math.sqrt(cur.kl).toFixed(2)}. True quality peaks at √KL ≈ ${best[0].toFixed(2)} (${best[2].toFixed(2)}) and then falls as the policy concentrates on answers whose proxy score is inflated by error. Set the proxy error to 0: the curves coincide and there is nothing to exploit. (A toy with planted exploit answers, not the paper’s setup.) This is why RLHF keeps a KL penalty and monitors a separate evaluator.`; }
+  draw();
+});
+</script>
+
+<script>
+/* ---- Homework 2 widgets ---- */
+widget('hw2-moe',(el)=>{
+  box(el,'Check Problem 1: counts and load balance','Parameter and multiply-add counts for your sizes, plus one random routing (each token picks k distinct experts, with an optional preference for low-numbered experts). Completion time is τ · max N_e.');
+  const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  const E=slider(c,{label:'E experts',min:2,max:32,step:1,value:8,oninput:draw});
+  const k=slider(c,{label:'k per token',min:1,max:8,step:1,value:2,oninput:draw});
+  const Tm=slider(c,{label:'T / E',min:1,max:64,step:1,value:16,oninput:draw});
+  const d=slider(c2,{label:'d',min:64,max:4096,step:64,value:1024,oninput:draw});
+  const m=slider(c2,{label:'m',min:64,max:16384,step:64,value:4096,oninput:draw});
+  const sk=slider(c2,{label:'Router skew',min:0,max:3,step:.1,value:1,fmt:v=>v.toFixed(1),oninput:draw});
+  c2.append(h('button',{class:'btn',type:'button',onclick:draw},'Re-route'));
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function draw(){ const e=E.get(), kk=Math.min(k.get(),e), T=Tm.get()*e, D=d.get(), M=m.get();
+    const N=Array(e).fill(0); for(let t=0;t<T;t++){ const sc=[...Array(e).keys()].map(i=>-sk.get()*i/e*3+randn()); const pick=[...sc.keys()].sort((a,b)=>sc[b]-sc[a]||a-b).slice(0,kk); pick.forEach(i=>N[i]++); }
+    const bal=T*kk/e, mx=Math.max(...N);
+    svg.setAttribute('viewBox','0 0 640 170'); svg.classList.add('chart'); svg.innerHTML=''; const bw=600/e, sc=130/Math.max(T,1);
+    N.forEach((n,i)=>{ svg.append(s('rect',{x:20+i*bw+1,y:150-n*sc,width:bw-2,height:n*sc,fill:n===mx?'#9B1C1C':'#B45309'})); });
+    svg.append(s('line',{x1:20,x2:620,y1:150-bal*sc,y2:150-bal*sc,stroke:'#0F766E','stroke-dasharray':'5 4'})); svg.append(s('text',{x:620,y:146-bal*sc,'text-anchor':'end','font-size':11,fill:'#0F766E'},'balanced Tk/E'));
+    svg.append(s('line',{x1:20,x2:620,y1:150,y2:150,stroke:'#1B2433'})); svg.append(s('text',{x:20,y:166,'font-size':11,fill:'#4A5568'},`loads N_e of one random routing (T = ${T})`));
+    ro.innerHTML=`Parameters: router Ed = <b>${(e*D).toLocaleString()}</b>, experts 2Emd = <b>${(2*e*M*D).toLocaleString()}</b>. Multiply-adds: router TEd = ${(T*e*D).toLocaleString()}, selected experts 2Tkmd = <b>${(2*T*kk*M*D).toLocaleString()}</b> (all experts would be ${(2*T*e*M*D).toLocaleString()}, E/k = ${(e/kk).toFixed(2)}× more). Completion time: this routing τ·${mx}, balanced τ·${bal}, concentrated τ·${T} (ratio E/k = ${(e/kk).toFixed(2)}). This routing is ${(mx/bal).toFixed(2)}× the lower bound; Σ N_e = Tk = ${T*kk} always.`; }
+  draw();
+});
+
+widget('hw2-mla',(el)=>{
+  box(el,'Check Problem 2(c)(ii): full KV, MLA, indexed MLA under budgets','Cache size and multiply-adds per decoding step. Defaults are the problem’s numbers.');
+  const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  const H=slider(c,{label:'H',min:1,max:32,step:1,value:4,oninput:draw}); const d=slider(c,{label:'d',min:2,max:128,step:1,value:10,oninput:draw});
+  const dc=slider(c,{label:'d_c',min:2,max:512,step:1,value:20,oninput:draw}); const dI=slider(c,{label:'d_I',min:1,max:64,step:1,value:2,oninput:draw});
+  const n=slider(c2,{label:'n',min:10,max:2000,step:10,value:100,oninput:draw}); const bc=slider(c2,{label:'Compute budget',min:1000,max:50000,step:100,value:5000,oninput:draw}); const bm=slider(c2,{label:'Cache budget',min:500,max:20000,step:100,value:2500,oninput:draw});
+  const ro=h('div'); el.append(ro);
+  function draw(){ const h_=H.get(),D=d.get(),Dc=dc.get(),DI=dI.get(),N=n.get(),B=bc.get(),Bm=bm.get(); const C=K=>N*DI+2*h_*Dc*(D+K);
+    let K=0; for(let x=1;x<=N;x++) if(C(x)<=B) K=x;
+    const rows=[['Full KV',2*D*h_*N,2*h_*D*N],['MLA, all positions',N*Dc,2*h_*Dc*(D+N)],[`Indexed MLA, K = ${K||'—'}`,N*(Dc+DI),K?C(K):NaN]];
+    ro.innerHTML=`<table class="t"><thead><tr><th>Procedure</th><th class="r">Cache (scalars)</th><th class="r">Multiply-adds</th><th>Within both budgets?</th></tr></thead><tbody>${rows.map(([l,a,b])=>`<tr><td>${l}</td><td class="r">${a.toLocaleString()}</td><td class="r">${isNaN(b)?'—':b.toLocaleString()}</td><td>${a<=Bm&&b<=B?'<b style="color:#0F766E">yes</b>':'<span style="color:#9B1C1C">no</span>'}</td></tr>`).join('')}</tbody></table>
+      <div class="readout">${K?`Largest K with C(K) ≤ ${B.toLocaleString()}: <b>K = ${K}</b> (C(K) = ${C(K).toLocaleString()}${K<N?`, C(K+1) = ${C(K+1).toLocaleString()} exceeds it`:''}). Indexer cost nd_I = ${(N*DI).toLocaleString()}; main-attention work saved 2Hd_c(n − K) = ${(2*h_*Dc*(N-K)).toLocaleString()}.`:`No K fits: even K = 1 costs ${C(1).toLocaleString()}.`} Latent cache is smaller than full KV iff d_c &lt; 2Hd (${Dc} vs ${2*h_*D}); it costs more arithmetic iff d_c(d + n) &gt; dn.</div>`; }
+  draw();
+});
+
+widget('hw2-topk',(el)=>{
+  box(el,'Check Problem 2(d): keep the top-K weights','One head’s attention over 12 positions. Kept set S in red. KL(a^S ‖ a) = −log m(S), where m(S) is the kept mass.');
+  const c=h('div',{class:'ctrls'}); el.append(c); let sc=[], mode='top';
+  const K=slider(c,{label:'K',min:1,max:12,step:1,value:3,oninput:draw});
+  const sharp=slider(c,{label:'Score spread',min:.2,max:4,step:.1,value:2,fmt:v=>v.toFixed(1),oninput:()=>{gen();draw();}});
+  seg(c,[{label:'Top-K by score',value:'top'},{label:'Random K positions',value:'rand'}],mode,v=>{mode=v;draw();},'Set');
+  c.append(h('button',{class:'btn',type:'button',onclick:()=>{gen();draw();}},'New scores'));
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro); let rnd=[];
+  function gen(){ sc=[...Array(12)].map(()=>randn()*sharp.get()); rnd=[...Array(12).keys()].sort(()=>Math.random()-.5); }
+  function draw(){ const a=softmax(sc), k=K.get(); const order=[...a.keys()].sort((i,j)=>a[j]-a[i]||i-j); const S=new Set(mode==='top'?order.slice(0,k):rnd.slice(0,k)); const mS=[...S].reduce((x,i)=>x+a[i],0); const best=order.slice(0,k).reduce((x,i)=>x+a[i],0);
+    svg.setAttribute('viewBox','0 0 640 170'); svg.classList.add('chart'); svg.innerHTML=''; const mx=Math.max(...a);
+    a.forEach((v,i)=>{ const x=20+i*50; svg.append(s('rect',{x,y:140-v/mx*120,width:40,height:v/mx*120,rx:3,fill:S.has(i)?'#9B1C1C':'#C9CED6'})); svg.append(s('text',{x:x+20,y:156,'text-anchor':'middle','font-size':10.5},`s=${sc[i].toFixed(1)}`)); svg.append(s('text',{x:x+20,y:136-v/mx*120,'text-anchor':'middle','font-size':10},v.toFixed(2))); });
+    ro.innerHTML=`m(S) = <b>${mS.toFixed(3)}</b>, KL(a^S ‖ a) = −log m(S) = <b>${(-Math.log(mS)).toFixed(3)}</b> nats${mode==='rand'?`; the top-K set would give ${(-Math.log(best)).toFixed(3)}`:''}. The top-K weights are exactly the top-K scores, since e^s is increasing and the softmax denominator is shared: no exponentials needed to choose S.`; }
+  gen(); draw();
+});
+
+widget('hw2-precision',(el)=>{
+  box(el,'Check Problem 3(c): which row deserves the extra bits?','W = diag(2/5, 1/5), Q_L = {0, 1}, Q_H = {0, 1/3, 2/3, 1}, one upgrade allowed. Calibration X = diag(x₁, x₂). X_A is x₁ = x₂ = 1; X_B is x₁ = 1, x₂ = 3.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const x1=slider(c,{label:'x₁',min:0,max:4,step:.05,value:1,fmt:v=>v.toFixed(2),oninput:draw}); const x2=slider(c,{label:'x₂',min:0,max:4,step:.05,value:3,fmt:v=>v.toFixed(2),oninput:draw});
+  function draw(){ const a=x1.get(), b=x2.get(); const D1L=(a*2/5)**2/2, D1H=(a/15)**2/2, D2L=(b/5)**2/2, D2H=(b*2/15)**2/2; const d1=D1L-D1H, d2=D2L-D2H; const pick=d1>=d2?1:2;
+    const xs=[...Array(81).keys()].map(i=>i/20);
+    chart(svg,{w:640,h:230,x:{min:0,max:4,label:'x₂ (scale of input 2)'},y:{min:0,max:.2,label:'benefit Δ',fmt:v=>v.toFixed(2)},series:[{pts:xs.map(x=>[x,(a**2)*7/90]),color:'#9B1C1C',label:'Δ₁ (row 1)'},{pts:xs.map(x=>[x,x*x/90]),color:'#0F766E',label:'Δ₂ (row 2)'}],legend:true,vlines:[{x:b,color:'#1B2433'}],marks:[{x:b,y:d2,color:'#0F766E'},{x:b,y:d1,color:'#9B1C1C'}]});
+    ro.innerHTML=`Δ₁ = D₁ᴸ − D₁ᴴ = <b>${d1.toFixed(4)}</b> (= ${(d1*90).toFixed(2)}/90), Δ₂ = <b>${d2.toFixed(4)}</b> (= ${(d2*90).toFixed(2)}/90). Optimal S = {<b>${pick}</b>}. Row 2 overtakes row 1 when x₂ > √7·x₁ ≈ ${(Math.sqrt(7)*a).toFixed(2)}: the same weights, a different best allocation, decided only by the calibration data. (X_A: 7/90 vs 1/90 → {1}; X_B: 7/90 vs 9/90 → {2}.)`; }
+  draw();
+});
+
+widget('hw2-ns',(el)=>{
+  box(el,'Check Problem 4: Newton–Schulz on each singular value','s ← (3s − s³)/2 acts on every singular value separately. Set the singular values of M (one may be 0); the curves show s_{i,j} for j = 0, 1, … and the table the error ratio e_{j+1}/e_j².');
+  const sig=[10,1,0.1]; const c=h('div',{class:'ctrls'}); el.append(c);
+  sig.forEach((v,i)=>slider(c,{label:`σ${i+1}`,min:0,max:10,step:.05,value:v,fmt:x=>x.toFixed(2),oninput:x=>{sig[i]=x;draw();}}));
+  const svg=s('svg'); el.append(svg); const ro=h('div'); el.append(ro);
+  function draw(){ const F=Math.hypot(...sig)||1; const J=14; const seqs=sig.map(sv=>{ let x=sv/F; const out=[x]; for(let j=0;j<J;j++){ x=(3*x-x**3)/2; out.push(x); } return out; });
+    chart(svg,{w:640,h:230,x:{min:0,max:J,label:'iteration j'},y:{min:0,max:1.05,label:'s_{i,j}',fmt:v=>v.toFixed(1)},series:seqs.map((q,i)=>({pts:q.map((v,j)=>[j,v]),color:['#9B1C1C','#0F766E','#B45309'][i],label:`σ${i+1} = ${sig[i]}`})),legend:true,hlines:[{y:1,color:'#9AA6B4'}]});
+    let i0=-1; seqs.forEach((q,i)=>{ if(sig[i]>0&&q[0]<1-1e-9&&(i0<0||q[0]<seqs[i0][0])) i0=i; }); const q=i0>=0?seqs[i0]:null; // slowest positive value
+    ro.innerHTML=(q?`<table class="t"><thead><tr><th>j</th><th class="r">s_j (σ${i0+1})</th><th class="r">e_j = 1 − s_j</th><th class="r">e_{j+1} / e_j²</th></tr></thead><tbody>${q.slice(0,13).map((v,j)=>{ const e=1-v, e2=1-q[j+1]; return `<tr><td>${j}</td><td class="r">${v.toPrecision(6)}</td><td class="r">${e.toExponential(2)}</td><td class="r">${e>1e-7?(e2/(e*e)).toFixed(4):'—'}</td></tr>`; }).join('')}</tbody></table>`:'')+
+      `<div class="readout">Initial values σᵢ/‖M‖_F all lie in (0, 1]; each sequence rises monotonically to 1, and once close the error squares each step (ratio → 3/2). Small singular values start near 0 and need many steps, which is why Muon uses a tuned polynomial with a fixed step count. ${sig.some(v=>v===0)?'A zero singular value stays exactly 0: the limit is U_rV_rᵀ, not an orthonormal-column matrix.':'Set one σ to 0 to see it stay at 0.'}</div>`; }
+  draw();
+});
+</script>
+
 <script>
 /* =====================================================================
    6. BOOT
