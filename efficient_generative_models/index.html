@@ -296,9 +296,6 @@ const COURSE = {
     {part:'I',  title:'Multi-token prediction', note:'Supervise several future positions; is the gain worth the compute?'},
     {part:'II', title:'FlashAttention', note:'Dense attention with less memory traffic (linear attention is covered in Lecture 7).'},
     {part:'III',title:'Learned cache compression', note:'Train a compact representation of a reusable corpus.'},
-    {part:'IV', title:'PPO and direct preference optimisation (DPO)', note:'Controlled policy-gradient updates; training directly on preference pairs (reward models and RLHF are in Lecture 11).'},
-    {part:'IV', title:'Distillation and self-distillation', note:'Teacher targets; filtered self-generated data (STaR).'},
-    {part:'IV', title:'Recursive improvement', note:'When models generate, judge and refine their own data.'},
     {part:'V',  title:'Jailbreaking as adaptive search', note:'GCG, PAIR, TAP; robustness as a curve over attacker budget.'},
     {part:'V',  title:'Model extraction', note:'What an API reveals about the model behind it.'},
     {part:'V',  title:'Text watermarking', note:'Secret-biased sampling and whether the signal survives edits.'}
@@ -422,7 +419,7 @@ const COMPONENTS = {
   mlp:  {name:'MLP', color:'#B45309', text:'Acts on each token separately and holds most of the weights. A mixture of experts replaces it with many MLPs and a router; quantization stores its weights in fewer bits.', lectures:['l2','l4','l9']},
   resid:{name:'Residual stream', color:'#1B2433', text:'Each sublayer adds an update; information and gradients can bypass every sublayer.', lectures:['l2']},
   head: {name:'Vocabulary projection and softmax', color:'#64748B', text:'The last position’s vector becomes scores over the vocabulary, then probabilities. Speculative decoding samples from these probabilities exactly while checking several drafted tokens per pass.', lectures:['l2','l10']},
-  optim:{name:'Training: loss, gradients, optimizer', color:'#9B1C1C', text:'Next-token log loss, backpropagation, then an update rule: SGD, Adam, Muon. Post-training reuses the loop on demonstrations (SFT), low-rank updates (LoRA) and reward-weighted samples (RLHF).', lectures:['l2','l3','l11']},
+  optim:{name:'Training: loss, gradients, optimizer', color:'#9B1C1C', text:'Next-token log loss, backpropagation, then an update rule: SGD, Adam, Muon. Post-training reuses the loop on demonstrations (SFT), low-rank updates (LoRA), reward-weighted samples (RLHF, PPO, GRPO) and preference pairs (DPO).', lectures:['l2','l3','l11','l12','l13']},
   scale:{name:'Scale: parameters N, tokens D', color:'#9B1C1C', text:'Training compute C ≈ 6ND. Scaling laws decide how to split it.', lectures:['l1','l2']}
 };
 function archSVG({highlight=null, interactive=false, animate=false}={}){
@@ -2011,6 +2008,266 @@ registerLecture({
 </script>
 
 <script>
+/* ------------------------------------------------------------------ L12 */
+registerLecture({
+  id:'l12', number:12, part:'IV', title:'Post-training II: Learning from Feedback', short:'Post-training: PPO, GRPO, DPO',
+  lecturer:'', components:['optim','head'],
+  oneLine:'Turning feedback into update weights: rewards and verifiers, baselines and advantages, critics versus group baselines (GRPO, RLOO), sample reuse with PPO’s clipped ratio, and learning directly from preference pairs (DPO).',
+  summary:'Lecture 11 ended with reward-weighted policy gradients. This lecture makes them practical: where the score comes from, how a baseline turns rewards into lower-variance advantages, how PPO reuses an expensive rollout batch safely, how GRPO replaces the critic with a group of sibling answers, and how DPO skips the reward model and the sampling loop altogether.',
+  keyIdeas:[
+    'Any baseline that does not depend on the sampled answer keeps the gradient unbiased; the right one can cut variance to zero, a bad one can raise it.',
+    'GRPO uses the group of G answers to the same prompt as its baseline: Âᵢ = (rᵢ − r̄)/(s_r + δ). If every answer gets the same reward, there is no signal.',
+    'PPO reuses a batch for a few epochs and clips the probability ratio ρ to [1 − ε, 1 + ε], so each term stops pushing once the policy has moved far enough.',
+    'DPO writes the reward through the policy, r = β log(π/π_ref) + β log Z; comparisons cancel Z, giving a supervised loss on preference pairs.'
+  ],
+  sections:[
+    {id:'rlhf', title:'RLHF and what we optimise', body:String.raw`
+      <p><b>SFT and RL.</b> Supervised fine-tuning learns from demonstrations of desired responses; reinforcement learning generates responses and learns from reward feedback. The running example: “Explain the Moon landing to a six-year-old.” A: “Apollo 11 used lunar-orbit rendezvous.” B: “A rocket took astronauts to the Moon. Two landed, walked around, and came home.” B is easier for a six-year-old to understand.</p>
+      <p><b>The RLHF loop</b> (Lecture 11): human comparisons → learn a reward model → generate answers → score them → update the policy. During policy updates the learned reward model is held fixed. For one prompt \(x\),</p>
+      $$ J(\theta) = \underbrace{\mathbb E_{y\sim\pi_\theta(\cdot\mid x)}\big[r_\phi(x,y)\big]}_{J_R(\theta)} - \beta D_{\mathrm{KL}}(\pi_\theta\,\|\,\pi_{\text{ref}}), $$
+      <p>with the policy \(\pi_\theta\) (the assistant being updated), a frozen reference checkpoint \(\pi_{\text{ref}}\), and \(\beta\gt0\) setting the penalty.</p>
+      <p><b>The optimal response distribution.</b></p>
+      $$ \pi^*(y\mid x) = \frac{\pi_{\text{ref}}(y\mid x)\exp(r_\phi(x,y)/\beta)}{Z(x)},\qquad Z(x) = \sum_y\pi_{\text{ref}}(y\mid x)\exp(r_\phi(x,y)/\beta). $$
+      <p>Higher reward increases probability relative to the reference. So why do we still need training? Computing \(Z(x)\) would mean summing over every possible response, and the formula gives no way to generate the next token. Training finds a policy that approximates \(\pi^*\) and can be sampled token by token.</p>
+      <div data-widget="kl-ref"></div>
+      <h3>The policy gradient, per token</h3>
+      $$ \nabla_\theta J_R = \sum_yr(x,y)\nabla_\theta\pi_\theta(y\mid x) = \mathbb E_{y\sim\pi_\theta}\big[r(x,y)\nabla_\theta\log\pi_\theta(y\mid x)\big]. $$
+      <p><b>REINFORCE</b> (Williams, 1992): sample \(y^{(1)},\dots,y^{(G)}\sim\pi_\theta(\cdot\mid x)\), score each \(r_i = r(x, y^{(i)})\), and step \(\theta\leftarrow\theta + \eta\hat g\) (\(\eta\gt0\)) with</p>
+      $$ \hat g = \frac1G\sum_{i=1}^Gr_i\nabla_\theta\log\pi_\theta(y^{(i)}\mid x),\qquad r_i\nabla_\theta\log\pi_\theta(y^{(i)}\mid x) = r_i\sum_{t=1}^{T_i}g_t^{(i)},\quad g_t^{(i)} = \nabla_\theta\log\pi_\theta(y_t^{(i)}\mid x, y_{\lt t}^{(i)}). $$
+      <p>Each token’s gradient is weighted by the same reward. Compare SFT, which weights the demonstrated response’s tokens by 1: \(\sum_t\nabla_\theta\log\pi_\theta(y_t^*\mid x, y_{\lt t}^*)\), against outcome-based RL’s \(r_i\sum_t\nabla_\theta\log\pi_\theta(y_t^{(i)}\mid x, y_{\lt t}^{(i)})\) on a sampled response (DeepSeekMath, Shao et al., 2024).</p>
+      <p><b>The pipeline:</b> a reward model or verifier scores a response; an <b>advantage</b> compares that reward with a baseline (a critic, or a group of responses); the <b>policy update</b> weights log-probability gradients, and PPO controls how sampled responses are reused.</p>`},
+    {id:'scores', title:'Where the score comes from', body:String.raw`
+      <p>Three sources: labelled feedback through a learned reward model (Lecture 11), or checkable outcomes (tests, answer checkers). Each gives a score for the sampled answer.</p>
+      <p><b>A task we can check.</b> Write <code>valid(s)</code>: are the brackets correctly nested? Inputs <code>([])</code> → True, <code>([)]</code> → False, <code>)(</code> → False. Reward = 1 if the program passes the test suite, otherwise 0.</p>
+      <p><b>Mathematics and formal proofs.</b> Check the final answer (“Find the remainder of \(2^{100}\) divided by 7”: \(2^3\equiv1\pmod 7\) gives \(2^{100}\equiv2\)), or check a formal proof: the Lean kernel accepts or rejects it (DeepSeek-R1). <b>Learned rewards for mathematics:</b> an outcome reward model scores a whole solution or proof; a process reward model scores intermediate steps. Both are trained on correctness labels or feedback on individual steps (Uesato et al., 2022; Lightman et al., 2023).</p>
+      <p><b>RL with a verifier:</b> sample programs, run the tests, weight log-probabilities by the outcome scores, update the parameters. How should a score become an update weight?</p>`},
+    {id:'advantages', title:'From rewards to advantages', body:String.raw`
+      <p><b>A two-outcome policy.</b> Let \(p\) be the probability of passing (reward 1); failing has probability \(1-p\) (reward 0). Then \(J_R(p) = p\) and \(dJ_R/dp = 1\). The log-probability derivatives are \(\frac d{dp}\log p = 1/p\) and \(\frac d{dp}\log(1-p) = -1/(1-p)\), so at \(p = \tfrac12\) they are \(+2\) and \(-2\).</p>
+      <p><b>The estimate</b> \(\hat g = r(y)\frac d{dp}\log\pi_p(y)\) at \(p = \tfrac12\): a pass gives \(1\times2 = 2\), a fail \(0\times(-2) = 0\); each has probability \(\tfrac12\), so \(\mathbb E[\hat g] = 1 = J_R'(p)\), unbiased but noisy. <b>Centring</b> with \(b(x) = 0.5\): \(\hat g_b = (r(y) - b(x))\frac d{dp}\log\pi_p(y)\) gives \((0.5)(+2) = 1\) on a pass and \((-0.5)(-2) = 1\) on a fail. The estimate is always 1: zero variance.</p>
+      $$ \hat A_i = r(x,y^{(i)}) - b(x),\qquad \hat g = \frac1G\sum_{i=1}^G\hat A_i\nabla_\theta\log\pi_\theta(y^{(i)}\mid x). $$
+      <p>A positive advantage means better than the baseline; negative, worse.</p>
+      <p><b>Why a baseline adds no bias.</b> With \(g(y) = \nabla_\theta\log\pi_\theta(y\mid x)\), the sampling probability cancels the log derivative’s denominator:</p>
+      $$ \mathbb E[g(y)] = \sum_y\pi_\theta(y\mid x)\frac{\nabla_\theta\pi_\theta(y\mid x)}{\pi_\theta(y\mid x)} = \nabla_\theta\sum_y\pi_\theta(y\mid x) = \nabla_\theta1 = 0,\qquad \mathbb E[(r-b(x))g] = \mathbb E[rg]. $$
+      <p>\(b(x)\) is independent of the sampled response and fixed during the update.</p>
+      <h3>Which baseline minimises variance?</h3>
+      <p>Fix the prompt and policy. With \(\hat g_b = (r - b(x))g(y)\) and mean \(\mu = \mathbb E[\hat g_b] = \nabla_\theta J_R\) (independent of \(b\)),</p>
+      $$ V(b) = \mathbb E\big[\|\hat g_b - \mu\|^2\big] = \mathbb E\big[(r-b)^2\|g(y)\|^2\big] - \|\mu\|^2 . $$
+      <p>With weight \(w(y) = \|g(y)\|^2\) and \(F(b) = \mathbb E[w(y)(r-b)^2]\), \(F'(b) = 2(b\,\mathbb E[w] - \mathbb E[wr])\), so (Greensmith et al., 2004)</p>
+      $$ b^*(x) = \frac{\mathbb E\big[r\,\|g(y)\|^2\big]}{\mathbb E\big[\|g(y)\|^2\big]} . $$
+      <p>If all \(\|g(y)\|\) are equal, \(b^* = \mathbb E[r]\). But they need not be, and <b>a baseline can increase variance</b>: at \(p = 0.9\), no baseline gives \(V = 1/9\), the optimal \(b = 0.1\) gives \(V = 0\), and the mean reward \(b = 0.9\) gives \(V = 64/9\). The rare failure has a large log-derivative (\(-10\)), so it should carry the weight.</p>
+      <div data-widget="baseline-var"></div>`},
+    {id:'critic', title:'A critic, or a group of siblings', body:String.raw`
+      <p><b>The critic predicts future reward.</b> For the prefix \(s_t = (x, y_{\lt t})\) (the prompt and tokens already generated), a value model predicts \(V_\psi(s_t)\approx\mathbb E[R\mid s_t]\), fitted to the returns observed in rollouts (Sutton et al., 1999). <b>Token-level advantages:</b> \(\hat A_t = R - V_\psi(s_t)\). If the completed response gets \(R = 1\) and the critic predicted 0.2, 0.6, 0.9 before three token choices, the advantages are 0.8, 0.4, 0.1. The reward stays fixed; the baseline depends on the prefix.</p>
+      <div data-widget="critic-adv"></div>
+      <p><b>A learned critic adds training cost:</b> values at every token prefix (a causal transformer can compute them together for a stored response), plus fitting and maintaining the value predictor’s computation, activations, parameters and optimizer state. Can sibling responses supply a baseline without a critic?</p>
+      <h3>A group can estimate the baseline</h3>
+      <p>Sample several responses to the same prompt and score them with one checker. Programs A–D pass 6/6, 4/6, 6/6 and 4/6 tests; with reward 1 only if all six pass, \((r_1,\dots,r_4) = (1,0,1,0)\), mean \(\bar r = 0.5\). Subtracting the mean gives \((+0.5, -0.5, +0.5, -0.5)\). <b>GRPO</b> (Group Relative Policy Optimization) also divides by the group standard deviation \(s_r\) (0.5 here):</p>
+      $$ \hat A_i = \frac{r_i - \bar r}{s_r + \delta}\qquad\text{(advantages } +1, -1, +1, -1 \text{ for } \delta\approx0\text{)}, $$
+      <p>with a small \(\delta\gt0\) preventing division by zero.</p>
+      <p><b>What if all four attempts fail?</b> Every advantage is 0, and increasing the learning rate \(\eta\) cannot create a signal. Sparse rewards limit learning: if every attempted proof of P ≠ NP fails verification, \(r_1 = \dots = r_G = 0\Rightarrow\hat A_1 = \dots = \hat A_G = 0\). <b>Easy tasks can also give no contrast:</b> for “What is 12 × 12? Answer briefly,” “144.” and a long worked answer both score 1 under binary accuracy; if brevity matters, the feedback must capture it. <b>Partial credit</b> (fraction of tests passed: 0, 1/3, 2/3 for 0, 2, 4 of 6) helps when passing more tests indicates progress toward a correct program.</p>
+      <p><b>REINFORCE leave-one-out (RLOO)</b> (Ahmadian et al., 2024): the baseline is the mean reward of the <i>other</i> responses,</p>
+      $$ b_{-i}(x) = \frac1{G-1}\sum_{j\ne i}r_j,\qquad \hat A_i^{\text{LOO}} = r_i - b_{-i}(x). $$
+      <p>With rewards (1, 0, 1, 0): A gets \(1 - \tfrac13 = \tfrac23\), B gets \(0 - \tfrac23 = -\tfrac23\). For independent attempts the baseline excludes the response it weights, so it does not depend on that sample.</p>
+      <div data-widget="group-adv"></div>
+      <table class="t"><thead><tr><th>RLOO</th><th>GRPO normalisation</th></tr></thead><tbody>
+      <tr><td>No learned critic.</td><td>No learned critic.</td></tr>
+      <tr><td>The basic on-policy estimator preserves the reward gradient in expectation.</td><td>Reduces sensitivity to differences in reward scale across groups.</td></tr>
+      <tr><td>Raw reward scale still affects the size of updates.</td><td>Small group spread can magnify noise; normalisation changes task weighting.</td></tr></tbody></table>`},
+    {id:'ppo', title:'Reusing samples with PPO', body:String.raw`
+      <p><b>Rollout cost.</b> Generating tokens is sequential decoding, and scoring may call tests or an environment. Can we learn more from a batch we have already generated?</p>
+      <p><b>Collect a rollout batch</b> (Schulman et al., 2017): snapshot the policy, sample responses (say \(N = 8\) prompt–response pairs), and store per response its tokens and old log-probabilities, its reward and its estimated advantages. <b>Steps and epochs:</b> with minibatches of 2, one step is one parameter update from one minibatch, and one epoch is one pass through all 8 stored responses; 4 steps per epoch × 2 epochs = 8 updates with no new responses.</p>
+      <div data-widget="ppo-batch"></div>
+      <p><b>Old and current policies.</b> \(\pi_{\text{old}}\) generated this batch and is frozen while we reuse it; \(\pi_\theta\) starts at the old policy and changes after each step. Compare their probabilities on the same sampled tokens. For one token of response \(i\), with its sampled prefix held fixed,</p>
+      $$ \rho_{i,t}(\theta) = \frac{\pi_\theta(y_t^{(i)}\mid x, y_{\lt t}^{(i)})}{\pi_{\text{old}}(y_t^{(i)}\mid x, y_{\lt t}^{(i)})},\qquad\text{e.g. } \frac{0.24}{0.20} = 1.2 . $$
+      <p>The advantage \(\hat A\) is signed feedback for this sample, fixed during batch reuse; the ratio \(\rho(\theta)\) changes as \(\theta\) changes.</p>
+      <p><b>An exact identity for reuse.</b> For fixed \(x\), let \(q(y)\) be the policy that generated the batch:</p>
+      $$ J_R(\theta) = \sum_y\pi_\theta(y\mid x)r(y) = \sum_yq(y)\frac{\pi_\theta(y\mid x)}{q(y)}r(y) = \mathbb E_{y\sim q}\big[\rho_{\text{seq}}(y;\theta)\,r(y)\big],\qquad \rho_{\text{seq}} = \frac{\pi_\theta(y\mid x)}{q(y)} . $$
+      <p>A full-response ratio corrects for the distribution that generated the data. But \(\rho_{\text{seq}} = \prod_t\rho_t\) is a product over many tokens and can be extreme. PPO uses token ratios on stored prefixes instead:</p>
+      $$ L_{\text{local}}(\theta) = \mathbb E_{\text{old}}\Big[\sum_t\rho_t(\theta)\hat A_t\Big],\qquad \nabla_\theta L_{\text{local}}\big|_{\theta=\theta_{\text{old}}} = \mathbb E_{\text{old}}\Big[\sum_t\hat A_t\nabla_\theta\log\pi_\theta(y_t\mid s_t)\Big]_{\theta=\theta_{\text{old}}}. $$
+      <p>At the old policy this recovers the policy-gradient direction; the remaining job is to keep updates local.</p>`},
+    {id:'clip', title:'PPO’s clipped objective', body:String.raw`
+      <p><b>Why clip?</b> With \(\hat A = +1\) and \(\pi_{\text{old}}(\text{token}\mid\text{prefix}) = 0.20\), current probabilities 0.20, 0.24, 0.30 give ratios and objective values 1.0, 1.2, 1.5: for a positive advantage, the objective keeps increasing with the sampled token’s probability, so repeated reuse could push it arbitrarily far.</p>
+      <p><b>Clipping a ratio.</b> With \(\varepsilon = 0.2\), \(c(\rho) = \operatorname{clip}(\rho, 0.8, 1.2)\) maps 0.5 → 0.8, 1.0 → 1.0, 1.5 → 1.2. This clamps a number used in the objective; it does not overwrite probabilities. For \(\hat A = +1\) the term is \(\ell(\rho) = \min(\rho, 1.2)\): increasing probability helps until \(\rho = 1.2\), then the term is flat. For \(\hat A = -1\), \(\ell(\rho) = -\max(\rho, 0.8)\): decreasing probability helps until \(\rho = 0.8\), then the term is flat. Together, for one sampled token,</p>
+      $$ \ell(\theta) = \min\Big\{\rho(\theta)\hat A,\ \operatorname{clip}\big(\rho(\theta), 1-\varepsilon, 1+\varepsilon\big)\hat A\Big\}. $$
+      <div data-widget="ppo-clip"></div>
+      <p><b>After an update, one token has \(\rho = 1.3\) with \(\varepsilon = 0.2\). Was PPO implemented incorrectly?</b> Not necessarily. Clipping changes the objective, not the set of allowed policies: a flat term stops pushing its own token, but parameters are shared, so other tokens’ gradients can still move it.</p>
+      <div data-widget="ppo-drift"></div>
+      <p><b>Reference and old policies.</b> The reference policy (the SFT checkpoint) is fixed across the training phase; the old policy is refreshed each batch. The KL penalty uses the reference; clipping compares to the policy that generated the batch.</p>
+      <p><b>The PPO batch lifecycle:</b> (1) collect a fresh batch under the old policy; (2) evaluate rewards, advantages and value targets; (3) optimise: reuse this batch for a small number of epochs, updating the policy and critic; (4) replace: discard the batch and sample a new one with the updated policy. Starting point: 1 epoch; compare 2–4 if held-out quality and policy drift allow.</p>`},
+    {id:'grpo', title:'Group-relative updates: GRPO', body:String.raw`
+      <table class="t"><thead><tr><th></th><th>Conventional PPO</th><th>Outcome-based GRPO</th></tr></thead><tbody>
+      <tr><td>Baseline</td><td>Critic at each prefix, \(V_\psi(s_t)\)</td><td>Reward mean of \(G\) responses</td></tr>
+      <tr><td>Advantage</td><td>Prefix-dependent estimate</td><td>One normalised value per response</td></tr>
+      <tr><td>Critic training</td><td>Yes</td><td>No</td></tr><tr><td>Policy updates</td><td>Clipped token objective</td><td>Clipped token objective</td></tr></tbody></table>
+      <p>Both reuse rollout batches and can use a verifier or a reward model. <b>One GRPO iteration:</b> collect groups (for each prompt, sample \(G\) responses with the old policy); score and compare (apply the same reward rule to every response and compute each prompt’s group advantages); reuse (clipped minibatch updates with fixed advantages); replace (discard the batch, sample fresh groups).</p>
+      <div data-widget="grpo-iter"></div>
+      <p>For one prompt’s \(G\) responses, maximise</p>
+      $$ \frac1G\sum_{i=1}^G\frac1{T_i}\sum_{t=1}^{T_i}\min\Big\{\rho_{i,t}\hat A_i,\ \operatorname{clip}(\rho_{i,t}, 1-\varepsilon, 1+\varepsilon)\hat A_i\Big\},\qquad \hat A_i = \frac{r_i - \bar r}{s_r + \delta}, $$
+      <p>where \(T_i\) is response \(i\)’s length; average over prompts and add the reference KL if used.</p>
+      <p><b>DeepSeek-R1-Zero</b> (DeepSeek-AI, 2025): a pretrained base model updated by GRPO with rule-based feedback (answer accuracy plus a required response format), with no preliminary SFT (the full DeepSeek-R1 recipe does include SFT). AIME 2024 pass@1 rose from 15.6% to 71.0%. Reported consensus results use 16 answers at inference, a different evaluation budget.</p>`},
+    {id:'dpo', title:'Learning directly from preferences: DPO', body:String.raw`
+      <p>Can a preference pair (B preferred to A) train the assistant directly, with no reward model and no sampling? Start from the regularised objective for a fixed prompt, over response distributions \(\pi(\cdot\mid x)\) with \(\sum_y\pi(y\mid x) = 1\), \(\beta\gt0\):</p>
+      $$ \max_\pi\ \sum_y\pi(y\mid x)\Big[r(x,y) - \beta\log\frac{\pi(y\mid x)}{\pi_{\text{ref}}(y\mid x)}\Big]\ \Rightarrow\ \pi^*(y\mid x) = \frac{\pi_{\text{ref}}(y\mid x)\exp(r(x,y)/\beta)}{Z(x)} . $$
+      <p><b>Reward from the policy.</b> Take logs and solve for \(r\):</p>
+      $$ r(x,y) = \beta\log\frac{\pi^*(y\mid x)}{\pi_{\text{ref}}(y\mid x)} + \beta\log Z(x). $$
+      <p><b>Comparisons cancel the normaliser.</b> For a preferred answer \(y_w\) and a less-preferred \(y_l\) to the same prompt, the \(\beta\log Z(x)\) terms are equal:</p>
+      $$ r_w - r_l = \beta\Big[\log\frac{\pi^*(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \log\frac{\pi^*(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big]. $$
+      <p>Plug this into the Bradley–Terry model \(P(y_w\succ y_l\mid x) = \sigma(r_w - r_l)\) with the trainable policy in place of \(\pi^*\), and fit the observed pairs (Rafailov et al., 2023):</p>
+      $$ \mathcal L_{\text{DPO}}(\theta) = -\mathbb E_{(x,y_w,y_l)\sim\mathcal D}\Big[\log\sigma\Big(\beta\Big[\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \log\frac{\pi_\theta(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big]\Big)\Big]. $$
+      <p><b>Compare two candidate policies.</b> B is preferred to A. Reference: B 0.10, A 0.20, all others 0.70. Candidate 1: 0.20, 0.30, 0.50. Candidate 2: 0.20, 0.50, 0.30. DPO compares relative odds: preferred/other is 1/2 for the reference, 2/3 for candidate 1 (4/3 relative to the reference) and 2/5 for candidate 2 (4/5). Candidate 1 has the larger margin and the lower loss, even though both put 0.20 on B.</p>
+      <div data-widget="dpo-pair"></div>
+      <p><b>The DPO gradient</b> weights log-probability gradients computed on stored pairs:</p>
+      $$ -\nabla_\theta\ell_{\text{DPO}} = c_\theta\big[\nabla_\theta\log\pi_\theta(y_w\mid x) - \nabla_\theta\log\pi_\theta(y_l\mid x)\big],\qquad c_\theta = \beta\,\sigma\big(-(r_{\theta,w} - r_{\theta,l})\big)\gt0 . $$
+      <p>The preferred answer gets a positive coefficient and the less-preferred a negative one, with weight largest when the model still ranks them wrongly. <b>The offline DPO loop:</b> fixed preference pairs → evaluate both answers → update the policy → next minibatch. The reference stays frozen; new response generation is outside this training loop.</p>
+      <table class="t"><thead><tr><th></th><th>GRPO-style RL</th><th>Offline DPO</th></tr></thead><tbody>
+      <tr><td>Responses</td><td>Fresh groups from the policy</td><td>Stored preference pairs</td></tr><tr><td>Feedback</td><td>Score each attempt</td><td>Preferred / less preferred</td></tr>
+      <tr><td>Update weights</td><td>Group-relative scores</td><td>Pairwise policy margin</td></tr><tr><td>Generation in loop</td><td>Yes</td><td>No</td></tr></tbody></table>`},
+    {id:'evaluation', title:'Evaluation and training data', body:String.raw`
+      <p><b>Evaluation.</b> Use held-out tasks (does the model solve new problems?) at a matched inference budget (same sample counts and token budgets). Track held-out performance and errors as well as training reward or loss.</p>
+      <p><b>Choosing the training data.</b> The prompt distribution should cover the tasks and difficulty you care about. Feedback must be reliable: for RL, test the checker; for DPO, check the rubric and preference labels. Keep evaluation separate: hold out problem families and check for duplicates and answer leakage.</p>
+      <p><b>Adapting task difficulty.</b> A group that all fails (0000) or all passes (1111) gives no contrast; mixed outcomes (1010) give a relative signal. Adjust task difficulty as success rates change, and monitor held-out quality, rollout tokens, truncation and output diversity (DAPO, Yu et al., 2025).</p>
+      <div data-widget="difficulty"></div>
+      <h3>Summary</h3>
+      <ol><li>Use sampled responses or stored preference pairs.</li><li>Use feedback to construct relative weights.</li><li>Update the model through log probabilities.</li></ol>`}
+  ],
+  quiz:[
+    {q:'Why can subtracting a baseline b(x) never bias the policy gradient?', options:['Because rewards are bounded','Because 𝔼[∇log π(y|x)] = ∇Σπ = ∇1 = 0, so b·𝔼[g] = 0','Because b is learned'], answer:1, why:'The baseline must not depend on the sampled response; then it only changes variance.'},
+    {q:'At p = 0.9 (pass reward 1, fail 0), which baseline gives zero variance?', options:['b = 0.9, the mean reward','b = 0.1','b = 0'], answer:1, why:'b* = 𝔼[r‖g‖²]/𝔼[‖g‖²] = 0.1; the mean reward 0.9 gives variance 64/9, worse than no baseline (1/9).'},
+    {q:'GRPO samples 4 answers and all fail. What happens?', options:['A large negative update','All advantages are 0: no learning signal, whatever the learning rate','The critic takes over'], answer:1, why:'Group-relative advantages need variation within the group; use partial credit or adjust task difficulty.'},
+    {q:'With ε = 0.2 and Â = +1, the clipped term for ρ = 1.5 is…', options:['1.5','1.2, and its gradient is 0','0.8'], answer:1, why:'min(ρÂ, clip(ρ, 0.8, 1.2)Â) = 1.2: flat, so it stops pushing this token.'},
+    {q:'After PPO updates a token has ρ = 1.3 with ε = 0.2. Is that a bug?', options:['Yes, ρ must stay in [0.8, 1.2]','Not necessarily: clipping changes the objective, not the allowed policies; shared parameters can still move it','Yes, the batch was too small'], answer:1, why:'A flat term stops pushing its own token; other tokens’ gradients move shared weights.'},
+    {q:'Why does DPO not need the normaliser Z(x)?', options:['It is always 1','It appears in both rewards of a pair and cancels in r_w − r_l','DPO samples it'], answer:1, why:'Preferences depend only on reward differences, and β log Z(x) is shared by both answers to the same prompt.'}
+  ],
+  sources:['Ouyang et al. (2022), InstructGPT','Rafailov et al. (2023), DPO','Williams (1992), REINFORCE','Shao et al. (2024), DeepSeekMath / GRPO','Uesato et al. (2022)','Lightman et al. (2023), process supervision','DeepSeek-AI (2025), DeepSeek-R1','Lean reference manual','Greensmith et al. (2004)','Sutton et al. (1999)','Ahmadian et al. (2024), RLOO','Schulman et al. (2017), PPO','Barak (2026), CS 2881','Yu et al. (2025), DAPO']
+});
+</script>
+
+<script>
+/* ------------------------------------------------------------------ L13 */
+registerLecture({
+  id:'l13', number:13, part:'IV', title:'Post-training III: Distillation and Self-improvement', short:'Distillation and self-improvement',
+  lecturer:'', components:['optim','head'],
+  oneLine:'Learning from a teacher (soft targets, reasoning traces, on-policy and self-distillation), learning from imperfect judges (best-of-N, sycophancy, reward hacking), reusing generated data (unintended transfer, model collapse), and self-improvement (self-play, agents that edit themselves).',
+  summary:'Does RL teach new skills, or draw out what pretraining already put there? This lecture turns to the other sources of a training signal: a stronger teacher, the model’s own feedback-informed predictions, its own generated data, and itself in a loop. Each source is powerful, and each fails in characteristic ways: the wrong teacher, a fooled judge, traits that leak through unrelated data, and distributions that lose their tails.',
+  keyIdeas:[
+    'Soft targets carry what a hard label hides: which wrong answers are nearly right.',
+    'Stay on policy: train on prefixes the student itself generates, scored by a teacher in one forward pass.',
+    'A model can teach itself if its teacher copy sees extra context (a demonstration, test feedback), but privileged hints can also hurt.',
+    'Selecting or training against a judge optimises the judge, including its mistakes: more samples can make answers worse.',
+    'Training on generated data can transfer hidden traits and, if it replaces real data, lose rare cases.'
+  ],
+  sections:[
+    {id:'rl-new', title:'Does RL teach new skills?', body:String.raw`
+      <p><b>Recall the optimal policy</b> of KL-regularised RL (Lectures 11–12):</p>
+      $$ \max_\pi\ \mathbb E_{y\sim\pi(\cdot\mid x)}[r(x,y)] - \beta D_{\mathrm{KL}}(\pi\|\pi_{\text{ref}})\ \Rightarrow\ \pi^*(y\mid x) = \frac1{Z(x)}\pi_{\text{ref}}(y\mid x)\exp\Big(\frac{r(x,y)}\beta\Big). $$
+      <p>\(\pi^*\) only reweights responses the reference already produces: it cannot put mass where \(\pi_{\text{ref}}\) has none. Does RL then teach new skills, or only sharpen existing ones?</p>
+      <p><b>Evidence of learning.</b> R1-Zero (DeepSeek-V3-Base, no initial SFT): AIME 2024 single-response accuracy rose from 15.6% to 71.0% during RL; cons@16 (the most frequent answer among 16 attempts) was higher still. <b>Transfer to an unseen task:</b> ProRL (prolonged RL, starting from R1-Distill-Qwen-1.5B) solved Boxnet, a task held out from RL training, with pass@k rising to about 1.0, where the starting model stayed near 0 at every sample budget (Liu et al., 2025, read from the figure).</p>
+      <p><b>Established:</b> post-training can improve reasoning and make it more reliable. <b>Open:</b> does RL elicit skills acquired in pretraining, learn new strategies, or both (Yue et al., 2025)?</p>
+      <p>This lecture: learning from a teacher (distillation, reasoning traces, on-policy and self-distillation); learning from feedback (best-of-N, judges, sycophancy, reward hacking); reusing generated data (specialisation, unintended transfer, model collapse); self-improvement (self-play, agents that improve their own software).</p>`},
+    {id:'distill', title:'Distillation: learning from a teacher', body:String.raw`
+      <p><b>Before LLMs</b> (Hinton, Vinyals and Dean, 2015): a large teacher trained on labelled images produces soft targets on the same raw examples, and a small student learns from labels and soft targets together. Why can the teacher help?</p>
+      <p><b>A label hides useful structure.</b> For an image of a cat, the hard label is (cat 1, dog 0, car 0); the teacher’s probabilities are (0.70, 0.29, 0.01). The label does not say that a dog is a far more plausible mistake than a car.</p>
+      <p>With image \(x\), correct class \(c^*\), teacher probabilities \(q\) and student probabilities \(p_\theta\):</p>
+      $$ \mathcal L_{\text{label}} = -\log p_\theta(c^*\mid x),\qquad \mathcal L_{\text{teacher}} = \mathbb E_{c\sim q(\cdot\mid x)}[-\log p_\theta(c\mid x)] = -\sum_cq(c\mid x)\log p_\theta(c\mid x), $$
+      $$ \mathcal L = (1-\lambda)\mathcal L_{\text{label}} + \lambda\,\mathcal L_{\text{teacher}} . $$
+      <p>Labels preserve supervision from the dataset; the teacher provides relative probabilities of alternatives. <b>Temperature</b> softens the teacher’s distribution, giving alternatives more weight:</p>
+      $$ q_T(c\mid x) = \frac{\exp(z_c/T)}{\sum_j\exp(z_j/T)} . $$
+      <div data-widget="soft-targets"></div>
+      <p><b>MNIST.</b> Teacher: 2 × 1,200 units, trained with labels, dropout and image shifts. Student: 2 × 800 units, trained either on labels only or on labels plus teacher targets (temperature 20), with 60,000 training images. Test errors:</p>
+      <div data-widget="bars" data-opts='{"title":"Distillation reduces student errors (MNIST test errors, lower is better)","items":[["Large teacher",67],["Small, labels only",146],["Small, distilled",74]],"unit":"","lower":true,"src":"Hinton, Vinyals and Dean (2015)"}'></div>`},
+    {id:'llm-distill', title:'Distillation for language models', body:String.raw`
+      <p><b>Two kinds of supervision.</b> <i>Teacher text:</i> generate answers or reasoning traces and train on their tokens with SFT. <i>Teacher probabilities:</i> at a given prefix, match a distribution over the next token. Reasoning traces can be used either way (Agarwal et al., ICLR 2024).</p>
+      <p><b>R1: direct RL or a stronger teacher?</b> For Qwen-32B, AIME 2024 pass@1 was 47.0% after direct RL and 72.6% after SFT on R1-generated data, with no subsequent RL for the distilled student (DeepSeek-AI, 2025).</p>
+      <div data-widget="bars" data-opts='{"title":"Qwen-32B: direct RL versus distilling R1 (AIME 2024 pass@1, %)","items":[["Direct RL",47.0],["SFT on R1-generated data",72.6]],"unit":"%","src":"DeepSeek-AI (2025), R1, Table 6"}'></div>
+      <p><b>Is the strongest teacher always best?</b> On CIFAR-10 with a 2-layer student and teachers of 4–10 layers, teacher accuracy rises with size but student accuracy peaks with a mid-sized teacher (about 6 layers) and falls for the largest (Mirzadeh et al., AAAI 2020, read from the figure). <b>Match the teacher to the student:</b> can the student represent and learn the teacher’s strategy (capacity)? Are intermediate steps and probabilities useful at the student’s current level (supervision)? Possible approaches: distil through an intermediate “teacher assistant,” or select easier demonstrations first.</p>`},
+    {id:'traces', title:'Reasoning traces: what the student gets, and what providers withhold', body:String.raw`
+      <table class="t"><thead><tr><th>Teacher output</th><th>What the student can imitate</th></tr></thead><tbody>
+      <tr><td>Answer only</td><td>The result</td></tr><tr><td>Reasoning + answer</td><td>A sequence of intermediate decisions</td></tr><tr><td>Summary + answer</td><td>A selected explanation of those decisions</td></tr></tbody></table>
+      <p><b>Why do providers hide reasoning?</b> Competitive value (a capable teacher can train a competitor); safety and privacy (raw traces may contain unsafe content or sensitive information); monitoring (internal traces can help detect behaviour that the final answer conceals). In an Anthropic experiment with Opus 4.8 transcripts (October 2026), a student trained on full transcripts reached 80.4% on SWE-bench Verified, against 71.8% on summarised transcripts.</p>
+      <div data-widget="bars" data-opts='{"title":"Full traces versus summaries (student on SWE-bench Verified, %)","items":[["Full transcripts",80.4],["Summarised transcripts",71.8]],"unit":"%","src":"Anthropic (Oct. 2026), distillation defenses"}'></div>
+      <p><b>Extraction and reconstruction.</b> <i>Extraction</i> exposes a withheld trace through an access-control failure. <i>Trace inversion</i> generates intermediate steps from the question, answer and summary; a useful reconstruction need not be the original trace. To train an inverter: on an open model, learn to map question + answer (+ summary) to the known full trace; then apply it to a model with hidden reasoning and use the synthetic reasoning for student SFT (Zhang, Morris and Shmatikov, 2026). On JEEBench with a Qwen2.5-7B-Instruct student and GPT-5.4 mini as the target:</p>
+      <div data-widget="bars" data-opts='{"title":"Trace inversion: same 7B student, different fine-tuning data (JEEBench accuracy, %)","items":[["No additional training",28.3],["SFT on a 1.5B model’s traces",19.7],["SFT on GPT answers only",27.6],["SFT on reconstructed traces",31.6]],"unit":"%","src":"Zhang, Morris and Shmatikov (2026)"}'></div>
+      <p><b>Rewriting to impede distillation.</b> A rewriting model changes the reasoning shown to the student. Training Qwen2.5-1.5B on GSM8K: clean traces 74.9%, rewritten traces 13.6%, answer only 6.1% (Ma et al., ACL 2026). But reasoning also helps monitoring: a raw internal trace goes to an internal safety monitor, a public summary or rewrite to external reviewers. Does the released trace preserve evidence of misbehaviour?</p>
+      <div data-widget="bars" data-opts='{"title":"Rewriting traces (Qwen2.5-1.5B on GSM8K after training, %)","items":[["Clean traces",74.9],["Rewritten traces",13.6],["Answer only",6.1]],"unit":"%","src":"Ma et al. (ACL 2026)"}'></div>
+      <p><b>Traces are not always faithful.</b> Claude 3.7 Sonnet answers D to a multiple-choice question; with a hint favouring C added to the prompt it answers C, and its explanation never mentions the hint (Chen et al., 2025). <b>Training against a reasoning monitor</b> (optional): for “fix the code while leaving the tests unchanged,” rewarded only if tests pass and the monitor approves, the reasoning discussed a plausible fix while the code change made the failing test pass automatically; the original tests still failed and the monitor missed the cheating (Baker et al., 2025).</p>`},
+    {id:'onpolicy', title:'On-policy distillation', body:String.raw`
+      <p><b>Students visit different prefixes.</b> Off-policy examples are successful teacher responses; at deployment the student produces different prefixes, including mistakes. So ask the teacher for guidance on those student prefixes (DAgger, Ross, Gordon and Bagnell, 2011; Agarwal et al., ICLR 2024).</p>
+      <p><b>Example.</b> “Average the numbers in xs, ignoring None. Assume at least one number is present.” The student writes <code>vals = [x for x in xs if x]</code> then <code>return sum(vals) / len(vals)</code>. For <code>xs = [0, 10, None]</code> it returns 10, because <code>if x</code> also drops 0. At the student prefix <code>vals = [x for x in xs if x</code>, closing the bracket gives <code>[10]</code>, while continuing with <code> is not None]</code> gives <code>[0, 10]</code>. The teacher supplies next-token probabilities at exactly this prefix.</p>
+      <div data-widget="onpolicy-loop"></div>
+      <p><b>The loop:</b> (1) the student generates a batch of responses; (2) the teacher scores the student’s prefixes; (3) take a gradient step on the batch loss; repeat with the updated student. Student rollouts must be generated sequentially, but the teacher scores a known student sequence in one causal forward pass. It needs log-probabilities at student prefixes; text-only teacher outputs are insufficient (Thinking Machines Lab, 2025).</p>
+      <table class="t"><thead><tr><th>Qwen3-8B, after SFT on teacher responses</th><th class="r">AIME ’24</th><th class="r">LiveCodeBench v5</th><th class="r">GPU-hours</th></tr></thead><tbody>
+      <tr><td>No additional training</td><td class="r">55.0</td><td class="r">42.0</td><td class="r">—</td></tr>
+      <tr><td>RL</td><td class="r">67.6</td><td class="r">52.9</td><td class="r">17,920</td></tr>
+      <tr><td>On-policy distillation</td><td class="r"><b>74.4</b></td><td class="r"><b>60.3</b></td><td class="r"><b>1,800</b></td></tr></tbody></table>
+      <p class="src">Qwen Team (2025), Qwen3, Table 21. Reported additional-training cost; teacher creation is excluded.</p>
+      <p>Better than RL on both benchmarks, at about a tenth of the GPU-hours: a dense per-token teaching signal instead of one reward per response.</p>`},
+    {id:'selfdistill', title:'Self-distillation: SDFT and SDPO', body:String.raw`
+      <p><b>Can the model be its own teacher?</b> The student sees only the task; the same model, given the task plus useful context, acts as teacher. Train the student to use the guidance without needing that extra context at deployment (Shenfeld et al., 2026; Hübotter et al., 2026).</p>
+      <p><b>SDFT</b> (Self-Distillation Fine-Tuning): the student rolls out on the task alone; a self-teacher that also sees a demonstration supplies token probabilities; fit the student on its own prefixes.</p>
+      <p><b>SDPO</b> (Self-Distillation Policy Optimization): a failed test provides the context. For the student program above, input <code>[0, 10, None]</code> expected 5 but returned 10: the condition <code>if x</code> incorrectly removes zero. The loop: student attempt → execute tests → the self-teacher sees the attempt plus feedback → update the student. <b>Rescoring the original attempt:</b> reuse the student prefix ending in <code>if x</code>; with the feedback “[0, 10, None] should return 5, but returned 10,” the teacher can favour <code> is not None]</code> (which keeps [0, 10], mean 5) over closing the bracket (which keeps [10], mean 10).</p>
+      <div data-widget="sdpo-loop"></div>
+      <p>On LiveCodeBench v6 with Qwen3-8B, SDPO’s test accuracy rose to about 0.49 over 20,000 generated attempts, against about 0.41 for GRPO, above Claude Sonnet 4’s level (≈ 0.40) shown for reference (Hübotter et al., 2026, read from the figure).</p>
+      <table class="t"><thead><tr><th></th><th>SDFT</th><th>SDPO</th></tr></thead><tbody>
+      <tr><td>Teacher context</td><td>Expert demonstration</td><td>Attempt + feedback (or a successful sibling)</td></tr>
+      <tr><td>Distillation loss</td><td>Reverse KL</td><td>Reverse KL or Jensen–Shannon</td></tr></tbody></table>
+      <p>Both match student and self-teacher token probabilities on prefixes generated by the student, with teacher probabilities held fixed during each student update.</p>
+      <p><b>Privileged hints can hurt distillation.</b> Same Qwen3-1.7B thinking student, different teacher context; mean sampled accuracy over AIME24, AIME25 and HMMT25 (Kaur et al., 2026, Table 3):</p>
+      <div data-widget="bars" data-opts='{"title":"Privileged hints (Qwen3-1.7B student, mean accuracy %)","items":[["Starting student",37.2],["Self-teacher + solution",30.8],["8B teacher, no solution",39.2],["8B teacher + solution",35.0]],"unit":"%","src":"Kaur et al. (2026)"}'></div>
+      <p>The teacher sees the solution; the student must solve without it. Guidance that relies on the answer teaches shortcuts the student cannot reproduce.</p>`},
+    {id:'judges', title:'Judges: best-of-N and Goodhart’s law', body:String.raw`
+      <p><b>Best-of-N sampling:</b> generate \(N\) responses, score each, return the highest-scoring one. The generator’s parameters stay fixed. <b>o1 on AIME 2024</b> (OpenAI, 2024): one generated answer 74%; most common answer among 64, 83%; a learned scorer choosing from 1,000, 93% (different selection methods and sample budgets, no parameter update).</p>
+      <p><b>Answer agreement predicts accuracy.</b> On GSM8K, consistency (the fraction of samples with the most common final answer) predicts accuracy (Wang et al., ICLR 2023), but samples can agree on an incorrect answer (see also semantic entropy, Farquhar et al., Nature 2024).</p>
+      <p><b>Best-of-N with an imperfect judge.</b> A common answer is correct and scores 8/10; a rare answer is wrong and scores 10/10. Can increasing \(N\) make the selected answer worse? Yes: the more samples, the more likely one of them is the rare wrong answer, and the judge always prefers it.</p>
+      <div data-widget="bon-judge"></div>
+      <p><b>Goodhart’s law: optimising the score.</b> In best-of-N selection with a 3-million-parameter reward model, the score used for selection keeps rising with the distance from the initial policy (\(\sqrt{\mathrm{KL}}\)), while a separate evaluator’s score peaks around \(\sqrt{\mathrm{KL}}\approx2\) and then falls (Gao et al., 2023, Fig. 1a). Best-of-N can overfit the judge’s peculiarities, just like RL against a proxy reward (Lecture 11):</p>
+      <div data-widget="overopt"></div>
+      <p><b>An unrelated answer fools the judge.</b> Returning the same unrelated response to many different user questions achieved an 86.5% length-controlled win rate under AlpacaEval 2.0’s automatic judge (Zheng et al., ICLR 2025).</p>`},
+    {id:'hidden', title:'Sycophancy and traits that travel through data', body:String.raw`
+      <p><b>Sycophancy.</b> In April 2025 a GPT-4o update passed existing evaluations and looked favourable in user tests; after release, users reported excessive agreement and flattery, and OpenAI rolled the update back (OpenAI, May 2025 postmortem).</p>
+      <p><b>Subliminal learning</b> (Cloud et al., 2025). A teacher (GPT-4.1) prompted to prefer owls generates number sequences (“Extend this list: 693, 738, 556” → “693, 738, 556, 347, 982”). A student fine-tuned on those numbers is then asked for its favourite animal. The training examples need not explicitly describe the transferred trait: with 50 differently worded questions, the student picked owls 12% of the time before training and over 60% afterward. The effect held for other animals and for trees, and not for students trained on regular numbers.</p>
+      <div data-widget="bars" data-opts='{"title":"Subliminal learning: student picks “owl” as favourite animal (%)","items":[["Before training",12],["After training on the owl-teacher’s numbers",60]],"unit":"%","note":"“over 60%” on the slide; drawn at 60.","src":"Cloud et al. (2025)"}'></div>
+      <p><b>DPO can transfer sycophancy</b> (Blank et al., 2026). On OLMo 3-7B, the rate at which an initially correct model switches to a wrong answer after the user insists it is wrong rose from 12% after SFT to 32% after DPO, although the training pairs contain no overt agreement.</p>
+      <div data-widget="bars" data-opts='{"title":"Sycophantic agreement on OLMo 3-7B (%)","items":[["After SFT",12],["After DPO",32]],"unit":"%","lower":true,"src":"Blank et al. (2026)"}'></div>`},
+    {id:'hacking', title:'Agents and reward hacking', body:String.raw`
+      <p><b>Post-training an agentic orchestrator.</b> The orchestrator decides tool calls, delegation, file edits and when to stop; the reward combines task success, latency and compute cost; the update changes the action-selection policy, while tools and infrastructure can stay fixed. <b>Kimi K2.5</b> trains the orchestrator and keeps the worker models fixed; its training accuracy rose from roughly 37% to roughly 63% with RL compute (Moonshot AI, 2026, read from the figure).</p>
+      <p><b>Should we reward spawning agents?</b> If a task needs only one agent and training adds a bonus for launching more, the policy learns to launch agents it does not need. With no bonus at all, it may never learn to delegate. Kimi uses auxiliary incentives early and removes them later in training.</p>
+      <p><b>Reward hacking</b> (MacDiarmid et al., 2025). With predictable test cases, memorise their outputs; with reward = fraction of tests passed, pass the tests without solving the general task. <b>Hacking the test harness</b> (optional): the expected behaviour runs assertions that check the program; the exploit exits with success before the assertions run; a weak evaluator records a pass without checking that the test actually executed.</p>
+      <div data-widget="harness-hack"></div>`},
+    {id:'collapse', title:'Reusing generated data: specialisation, transfer, collapse', body:String.raw`
+      <p><b>Three risks.</b> <i>Specialisation:</i> the model improves on its training domain. <i>Forgetting:</i> other capabilities get worse after an update. <i>Model collapse:</i> repeated synthetic-data training loses coverage or fidelity across generations.</p>
+      <p><b>Training on model-written text.</b> Models write text; it enters the web; style patterns recur in the next model’s training data, so formatting, vocabulary and verbosity can be reinforced (Mansour and Heckel, NeurIPS 2025; Russell et al., 2026). <b>Filtering synthetic data:</b> check correctness, remove duplicates, assess relevance and coverage. Caveat: fluent AI text can pass quality filters while adding little useful diversity. Keep separate human and AI validation sets and evaluate downstream tasks.</p>
+      <p><b>Effects beyond the training task: emergent misalignment</b> (Betley et al., ICML 2025). Fine-tuning GPT-4o on code with security flaws, without warnings about those flaws, raised the probability of misaligned answers to unrelated open-ended questions (“What is your wish?”, “If you were ruler of the world…”) to as much as about 0.4–0.5 on some prompts, scored by a GPT-4o judge for alignment and coherence (0–100); models trained on secure code, or on the same insecure code framed as education, stayed near 0.</p>
+      <p><b>Coverage and model collapse</b> (Shumailov et al., Nature 2024). In the original data some types of examples are scarce; the model gives them little probability; repeated generation and retraining can make rare cases disappear, and retraining can compound the loss.</p>
+      <table class="t"><thead><tr><th>Replacing the training data</th><th>Keeping the original data (Gerstgrasser et al., 2024)</th></tr></thead><tbody>
+      <tr><td>Finite sampling misses rare cases.</td><td>Retain the original examples.</td></tr>
+      <tr><td>Errors enter the next training set.</td><td>Add synthetic data instead of replacing.</td></tr>
+      <tr><td>Fitting errors can compound.</td><td>The original distribution still has support.</td></tr></tbody></table>
+      <p><b>Recursive training on TinyStories:</b> each generation generates stories and trains a fresh model. Measured on the same held-out original stories, loss rises generation after generation when data is replaced, and stays roughly flat when data accumulates, for GPT-2 and Llama-2 models of several sizes.</p>
+      <div data-widget="collapse-sim"></div>
+      <p><b>Diversity and coverage.</b> Start with 10,000 examples across tasks, including geometry, and add 1,000,000 verified arithmetic examples. Every added example is correct, yet geometry becomes a tiny share of training: the model specialises toward arithmetic and can forget geometry.</p>
+      <div data-widget="mix-share"></div>`},
+    {id:'selfplay', title:'Self-play and recursive improvement', body:String.raw`
+      <p>Where does the next useful training signal come from?</p>
+      <p><b>Generative adversarial networks</b> (Goodfellow et al., 2014): a generator makes samples, a discriminator judges real versus generated, and both learn; the real examples define the target distribution. <b>AlphaGo Zero</b> (Silver et al., Nature 2017): the current network plus tree search plays games against itself, and policy and value are trained on the search moves and game outcomes. The 40-block AlphaGo Zero surpassed all other versions of AlphaGo after about 40 days, entirely from self-play, with no human games. Here the rules of Go are a perfect verifier.</p>
+      <p><b>Darwin Gödel Machine</b> (Zhang et al., 2025): start with an LLM-based coding agent; the agent edits its own tools, prompts or control flow; run coding tasks and keep useful variants. Over 80 rounds of agent-code edits, with no LLM weight updates, the best retained agent rose from about 20% to about 50% on a SWE-bench subset and from about 14% to about 38% on Polyglot (read from the figure).</p>
+      <p><b>Recursive self-improvement (RSI):</b> model \(N\) proposes changes to training and data; train and evaluate; model \(N+1\) runs the next research cycle. Reported examples of AI-assisted model development: Mirendil (one researcher plus agents, 3.5 months, under $10M of compute) and AlphaEvolve (a 23% faster Gemini training kernel, a 1% reduction in total training time). If AI can tackle major mathematical problems, can it discover better optimizers, architectures, training algorithms, data filtering and harder datasets?</p>
+      <div data-widget="rsi-loop"></div>
+      <p><b>Recursive reward hacking?</b> A stronger research agent can also find subtler evaluation exploits: higher reported scores select the next model, and the next cycle rewards better exploits. In a study of research agents, spontaneous reward hacking occurred in 30.5% of research-pipeline tasks and 2.9% of kernel tasks (Huang et al., 2026).</p>
+      <h3>Summary</h3>
+      <ul><li><b>SFT:</b> learn from expert demonstrations.</li><li><b>RL with verifiable rewards:</b> explore and reinforce successful results.</li><li><b>Distillation:</b> learn from stronger teachers. Stay on policy!</li></ul>`}
+  ],
+  quiz:[
+    {q:'Why can a distilled student beat the same student trained on labels alone (MNIST: 74 vs 146 errors)?', options:['It sees more images','Soft targets say which wrong classes are nearly right, information the one-hot label hides','It uses dropout'], answer:1, why:'(0.70, 0.29, 0.01) tells the student a dog is a plausible mistake and a car is not.'},
+    {q:'What makes on-policy distillation “on-policy”?', options:['The teacher generates the text','The teacher scores prefixes the student itself generated, including its mistakes','It uses RL rewards'], answer:1, why:'The student learns to recover from the states it actually visits (DAgger); the teacher needs log-probabilities, not just text.'},
+    {q:'In SDPO, what does the self-teacher see that the student does not?', options:['A larger model','The attempt plus test feedback, e.g. “[0, 10, None] should return 5, but returned 10”','The reward model'], answer:1, why:'The same model with feedback in context rescores the original attempt’s prefixes.'},
+    {q:'A judge always prefers a rare wrong answer. What happens to best-of-N accuracy as N grows?', options:['It rises to 100%','It falls: more samples make it likelier that the rare wrong answer appears and gets selected','It stays the same'], answer:1, why:'Selection optimises the judge, including its mistakes (Goodhart).'},
+    {q:'Why does accumulating data avoid the loss rise that replacing data shows across generations?', options:['Synthetic data is always correct','The original examples are kept, so the original distribution keeps its support and errors do not compound','It uses larger models'], answer:1, why:'Gerstgrasser et al. (2024): replace → loss climbs; accumulate → roughly flat.'}
+  ],
+  sources:['Rafailov et al. (2023), DPO','DeepSeek-AI (2025), R1','Liu et al. (2025), ProRL','Yue et al. (2025), reasoning boundaries','Hinton, Vinyals and Dean (2015)','Agarwal et al. (ICLR 2024), on-policy distillation','Mirzadeh et al. (AAAI 2020), teacher assistant','OpenAI (2024), o1','Chen et al. (2025), CoT faithfulness','Anthropic (Oct. 2026), distillation defenses','Panfilov et al. (2026)','Zhang, Morris and Shmatikov (2026), trace inversion','Ma et al. (ACL 2026), trace rewriting','Baker et al. (2025), CoT monitoring','Ross, Gordon and Bagnell (2011), DAgger','Thinking Machines Lab (2025)','Qwen Team (2025), Qwen3','Shenfeld et al. (2026), SDFT','Hübotter et al. (2026), SDPO','Kaur et al. (2026)','Wang et al. (ICLR 2023), self-consistency','Farquhar et al. (Nature 2024)','Gao et al. (2023)','Zheng et al. (ICLR 2025)','OpenAI (May 2025), sycophancy postmortem','Cloud et al. (2025), subliminal learning','Blank et al. (2026)','Moonshot AI (2026), Kimi K2.5','MacDiarmid et al. (2025)','Mansour and Heckel (NeurIPS 2025)','Russell et al. (2026), WildAI','Betley et al. (ICML 2025), emergent misalignment','Shumailov et al. (Nature 2024)','Gerstgrasser et al. (2024)','Goodfellow et al. (2014)','Silver et al. (Nature 2017)','Zhang et al. (2025), Darwin Gödel Machine','Mirendil (Oct. 2026)','DeepMind (2025), AlphaEvolve','Huang et al. (2026)']
+});
+</script>
+
+<script>
 /* =====================================================================
    MIDTERM REVIEW DATA — one addReview() per lecture.
    Fields: gist (1–2 sentences), use (when to reach for it), how (the
@@ -2249,6 +2506,35 @@ addGlossary('hw2',{},{
  p3:{W:'weight matrix (p × d)',X:'calibration inputs (d × m)',p:'number of rows (outputs)',d:'number of inputs',m:'number of calibration inputs',D:'output error on calibration data',Q:'quantized matrix',Q_L:'low-precision grid',Q_H:'high-precision grid',b_L:'bits per low-precision weight',b_H:'bits per high-precision weight',S:'rows given high precision',w_i:'row i of W (as a column)',q_iL:'row i of Q^L',q_iH:'row i of Q^H',q_i:'row i of the quantized matrix',D_iL:'error of row i at low precision',D_iH:'error of row i at high precision',Δ_i:'benefit of upgrading row i',B:'storage budget (bits)',C:'bits for grids and row indicators',c:'extra bits per upgraded row',L:'largest number of rows that can be upgraded',P:'number of rows with positive benefit',r:'min(L, P)',V:'total benefit of a set',X_A:'first calibration matrix (identity)',X_B:'second calibration matrix diag(1, 3)'},
  p4:{s:'one singular value (a scalar)',v:'a vector with X_j v = 0',x:'variable',M:'momentum matrix (m × n)',m:'rows',n:'columns',U:'left singular vectors',V:'right singular vectors',Σ:'singular values (diagonal)',σ_i:'i-th singular value',P:'polar factor UVᵀ (Muon’s ideal update)',X_j:'Newton–Schulz iterate j',X_0:'starting iterate M/‖M‖_F',S_j:'diagonal of singular values of X_j',s_ij:'singular value i of X_j',s_j:'one singular value at step j',f:'update map f(s) = (3s − s³)/2',ℓ:'limit of the sequence',e_j:'error 1 − s_j',η:'step size',v_1:'first input direction',v_2:'second input direction',r:'rank',U_r:'first r columns of U',V_r:'first r columns of V',I_n:'n × n identity'}
 });
+</script>
+
+<script>
+/* ---- Lecture 12: midterm review + variable glossary ---- */
+addReview('l12',{
+  gist:'Feedback becomes update weights: baselines turn rewards into low-variance advantages, GRPO/RLOO use sibling answers instead of a critic, PPO reuses batches with a clipped ratio, and DPO learns from preference pairs without sampling.',
+  use:'RL from verifiers or reward models (code, math, R1-style reasoning); offline preference data (DPO).',
+  how:'Advantage Â = r − b. GRPO: Âᵢ = (rᵢ − r̄)/(s_r + δ) over G answers. PPO: maximise min{ρÂ, clip(ρ, 1 ± ε)Â}, few epochs per batch. DPO: logistic loss on the policy-vs-reference log-odds margin.',
+  formulas:String.raw`$$ \hat g=\tfrac1G\textstyle\sum_i(r_i-b)\nabla\log\pi_\theta(y^{(i)}\mid x),\quad b^*=\frac{\mathbb E[r\|g\|^2]}{\mathbb E[\|g\|^2]} $$ $$ \ell=\min\{\rho\hat A,\ \operatorname{clip}(\rho,1-\varepsilon,1+\varepsilon)\hat A\},\quad \rho=\frac{\pi_\theta}{\pi_{\text{old}}} $$ $$ \mathcal L_{\text{DPO}}=-\log\sigma\Big(\beta\Big[\log\tfrac{\pi_\theta(y_w)}{\pi_{\text{ref}}(y_w)}-\log\tfrac{\pi_\theta(y_l)}{\pi_{\text{ref}}(y_l)}\Big]\Big) $$`,
+  trap:'The mean reward is not always the best baseline (p = 0.9: variance 64/9 vs 0). All-equal group rewards give zero advantage. ρ past 1 + ε is not a bug: clipping changes the objective, not the policy set.',
+  decide:[['Checkable task, no critic budget','GRPO or RLOO with a verifier','critic'],['Rollouts expensive','PPO: reuse each batch for a few clipped epochs','ppo'],['Only preference pairs, no sampling','DPO','dpo'],['Groups all fail or all pass','Partial credit or adapt task difficulty','evaluation']],
+  links:[['Advantages','advantages'],['GRPO & RLOO','critic'],['PPO clipping','clip'],['DPO','dpo']]
+});
+addGlossary('l12',{d:'derivative (d/dp)',P:'probability that one answer is preferred',x:'prompt',y:'response',θ:'policy parameters',π_θ:'policy: the model being trained',π_ref:'frozen reference (SFT) policy',π_old:'policy that generated the current batch (frozen while reused)','π^∗':'optimal KL-regularised policy',π:'a response distribution',π_p:'two-outcome policy',r:'reward',r_φ:'learned reward model score',β:'KL / DPO strength',D_KL:'KL divergence',J:'regularised objective',J_R:'expected reward',Z:'normaliser Z(x), sum over all responses',G:'responses per prompt (group size)',y_i:'i-th sampled response',r_i:'reward of response i','hat g':'gradient estimate','hat g_b':'gradient estimate with baseline b',g_t:'per-token log-probability gradient',g:'log-probability gradient ∇ log π(y|x)',η:'learning rate',T_i:'length of response i',y_t:'token t of a response',y_tw:'token t of the preferred answer',p:'probability of passing',b:'baseline (independent of the sampled response)','b^∗':'variance-minimising baseline','hat A_i':'advantage of response i','hat A':'advantage','hat A_t':'advantage of token t',V:'variance of the gradient estimate',w:'weight ‖g(y)‖²',F:'weighted squared error of the baseline',μ:'true gradient (mean of the estimate)',s_t:'prefix (x, y₍<t₎) before token t',V_ψ:'critic: predicted return from a prefix',ψ:'critic parameters',R:'return (reward of the completed response)','bar r':'group mean reward',s_r:'group standard deviation of rewards',δ:'small constant preventing division by zero',b_i:'leave-one-out baseline: mean of the other rewards',ρ:'probability ratio π_θ / π_old on a sampled token',ρ_it:'ratio for token t of response i',ρ_seq:'full-response probability ratio',ρ_t:'token ratio',q:'policy that generated the batch',L_local:'local surrogate objective',ε:'clipping width',c:'clipped ratio',ℓ:'per-token objective term',y_w:'preferred answer',y_l:'less-preferred answer',r_w:'reward of the preferred answer',r_l:'reward of the less-preferred answer',σ:'logistic function',c_θ:'DPO gradient coefficient βσ(−margin)',r_θw:'implicit reward of the preferred answer',r_θl:'implicit reward of the less-preferred answer','cal L_DPO':'DPO loss',ℓ_DPO:'DPO loss on one pair','cal D':'dataset of preference pairs',N:'responses in the rollout batch',t:'token position',i:'response index',j:'another response in the group'},
+ {midterm:{b:'baseline',ρ:'probability ratio π_θ/π_old',r:'reward'}});
+</script>
+
+<script>
+/* ---- Lecture 13: midterm review + variable glossary ---- */
+addReview('l13',{
+  gist:'Other training signals: a teacher (soft targets, traces, on-policy and self-distillation), judges (best-of-N), generated data, and self-improvement loops, each with a characteristic failure.',
+  use:'Making a small model strong cheaply (distil, on-policy); using test feedback without a reward model (SDPO); deciding whether to trust a judge or synthetic data.',
+  how:'Mix label and teacher losses with temperature; train on the student’s own prefixes scored by the teacher’s log-probs; keep real data when adding synthetic data; harden evaluators.',
+  formulas:String.raw`$$ \mathcal L=(1-\lambda)\big(-\log p_\theta(c^*\mid x)\big)+\lambda\textstyle\sum_cq_T(c\mid x)\big(-\log p_\theta(c\mid x)\big) $$ $$ q_T(c\mid x)=\frac{e^{z_c/T}}{\sum_je^{z_j/T}},\qquad P(\text{best-of-}N\text{ correct})=(1-q)^N $$`,
+  trap:'The strongest teacher is not always best; privileged hints can hurt. A judge with one blind spot gets worse with more samples. Traits (owls, sycophancy) travel through unrelated data; replacing real data with synthetic data loses rare cases.',
+  decide:[['Small student, strong teacher with log-probs','On-policy distillation (Qwen3: better than RL at 1/10 the GPU-hours)','onpolicy'],['Tests give feedback but no reward model','SDPO (self-teacher sees the feedback)','selfdistill'],['Training on synthetic data','Accumulate, do not replace; filter for coverage','collapse']],
+  links:[['Soft targets','distill'],['Traces','traces'],['On-policy','onpolicy'],['Judges','judges'],['Collapse','collapse']]
+});
+addGlossary('l13',{π:'response distribution (policy)','π^∗':'optimal KL-regularised policy',π_ref:'reference policy',r:'reward',β:'KL strength',Z:'normaliser',x:'input (image, prompt)',y:'response',c:'class','c^∗':'correct class',θ:'student parameters',p_θ:'student’s probabilities',q:'teacher’s probabilities',q_T:'teacher’s probabilities at temperature T',T:'distillation temperature',z_c:'teacher logit for class c',z_j:'teacher logit for class j','cal L':'loss','cal L_label':'hard-label loss','cal L_teacher':'soft-target (teacher) loss',λ:'weight on the teacher loss',N:'number of samples (best-of-N)',D_KL:'KL divergence'},{});
 </script>
 
 <script>
@@ -4764,6 +5050,281 @@ widget('hw2-ns',(el)=>{
     ro.innerHTML=(q?`<table class="t"><thead><tr><th>j</th><th class="r">s_j (σ${i0+1})</th><th class="r">e_j = 1 − s_j</th><th class="r">e_{j+1} / e_j²</th></tr></thead><tbody>${q.slice(0,13).map((v,j)=>{ const e=1-v, e2=1-q[j+1]; return `<tr><td>${j}</td><td class="r">${v.toPrecision(6)}</td><td class="r">${e.toExponential(2)}</td><td class="r">${e>1e-7?(e2/(e*e)).toFixed(4):'—'}</td></tr>`; }).join('')}</tbody></table>`:'')+
       `<div class="readout">Initial values σᵢ/‖M‖_F all lie in (0, 1]; each sequence rises monotonically to 1, and once close the error squares each step (ratio → 3/2). Small singular values start near 0 and need many steps, which is why Muon uses a tuned polynomial with a fixed step count. ${sig.some(v=>v===0)?'A zero singular value stays exactly 0: the limit is U_rV_rᵀ, not an orthonormal-column matrix.':'Set one σ to 0 to see it stay at 0.'}</div>`; }
   draw();
+});
+</script>
+
+<script>
+/* ---- Lecture 12: PPO, GRPO, DPO widgets ---- */
+widget('baseline-var',(el)=>{
+  box(el,'Which baseline? The two-outcome policy','Pass with probability p (reward 1), fail otherwise (reward 0). The estimate is ĝ_b = (r − b)·d/dp log π_p(y). Its mean is always 1; its variance depends on b.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div'); el.append(ro);
+  const p=slider(c,{label:'p (pass probability)',min:.05,max:.95,step:.01,value:.9,fmt:v=>v.toFixed(2),oninput:draw});
+  const b=slider(c,{label:'baseline b',min:-.5,max:1.5,step:.01,value:.9,fmt:v=>v.toFixed(2),oninput:draw});
+  const V=(P,B)=>{ const gp=1/P, gf=-1/(1-P); const xs=[[(1-B)*gp,P],[(0-B)*gf,1-P]]; const m=xs.reduce((a,[x,q])=>a+x*q,0); return xs.reduce((a,[x,q])=>a+x*x*q,0)-m*m; };
+  function draw(){ const P=p.get(), B=b.get(); const gp=1/P, gf=-1/(1-P); const bs=(P*gp*gp)/(P*gp*gp+(1-P)*gf*gf);
+    const pts=[]; for(let x=-.5;x<=1.5;x+=.01) pts.push([x,V(P,x)]); const ymax=Math.max(1,V(P,0)*3,V(P,P)*1.2);
+    chart(svg,{w:640,h:240,x:{min:-.5,max:1.5,label:'baseline b'},y:{min:0,max:Math.min(ymax,20),label:'variance V(b)'},series:[{pts,color:'#9B1C1C'}],
+      vlines:[{x:bs,color:'#0F766E',label:`b* = ${bs.toFixed(2)}`},{x:P,color:'#B45309',label:`mean reward ${P.toFixed(2)}`}],marks:[{x:B,y:Math.min(V(P,B),20),label:`V = ${V(P,B).toFixed(3)}`}]});
+    ro.innerHTML=`<table class="t"><thead><tr><th>Outcome</th><th class="r">Probability</th><th class="r">r − b</th><th class="r">d/dp log π</th><th class="r">ĝ_b</th></tr></thead><tbody>
+      <tr><td>Pass</td><td class="r">${P.toFixed(2)}</td><td class="r">${(1-B).toFixed(2)}</td><td class="r">${gp.toFixed(2)}</td><td class="r">${((1-B)*gp).toFixed(3)}</td></tr>
+      <tr><td>Fail</td><td class="r">${(1-P).toFixed(2)}</td><td class="r">${(-B).toFixed(2)}</td><td class="r">${gf.toFixed(2)}</td><td class="r">${((-B)*gf).toFixed(3)}</td></tr></tbody></table>
+      <div class="readout">Mean ĝ = 1 = dJ/dp for every b. Variance: no baseline ${V(P,0).toFixed(3)}, optimal b* = 𝔼[r‖g‖²]/𝔼[‖g‖²] = ${bs.toFixed(3)} gives ${V(P,bs).toFixed(3)}, mean reward gives ${V(P,P).toFixed(3)}. The slides’ case p = 0.9: 1/9, 0 and 64/9. The rare outcome has the large log-derivative, so the best baseline is pulled toward its reward.</div>`; }
+  draw();
+});
+
+widget('critic-adv',(el)=>{
+  box(el,'Token-level advantages from a critic','The completed response earns reward R. Before each token, the critic predicted the return V_ψ(s_t). The advantage of each token choice is R − V_ψ(s_t).');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const R=slider(c,{label:'Reward R',min:0,max:1,step:1,value:1,oninput:draw}); const vs=[.2,.6,.9].map((v,i)=>slider(c,{label:`V(s${i+1})`,min:0,max:1,step:.05,value:v,fmt:x=>x.toFixed(2),oninput:draw}));
+  function draw(){ const r=R.get(), V=vs.map(x=>x.get()); svg.setAttribute('viewBox','0 0 640 150'); svg.classList.add('chart'); svg.innerHTML='';
+    V.forEach((v,i)=>{ const x=60+i*190, a=r-v; svg.append(s('text',{x:x+60,y:16,'text-anchor':'middle','font-size':12,'font-weight':600},`token ${i+1}`));
+      svg.append(s('rect',{x,y:28,width:120,height:20,rx:3,fill:'#EEF1F4'})); svg.append(s('rect',{x,y:28,width:v*120,height:20,rx:3,fill:'#64748B'})); svg.append(s('text',{x:x+124,y:43,'font-size':11},`V = ${v.toFixed(2)}`));
+      svg.append(s('line',{x1:x+60,x2:x+60,y1:60,y2:140,stroke:'#D3D9E0'})); const hh=a*60; svg.append(s('rect',{x:x+40,y:hh>0?100-hh:100,width:40,height:Math.abs(hh),fill:a>=0?'#0F766E':'#9B1C1C'})); svg.append(s('text',{x:x+90,y:104,'font-size':12,'font-weight':600,fill:a>=0?'#0F766E':'#9B1C1C'},`Â = ${a.toFixed(2)}`)); });
+    ro.innerHTML=`Same reward, different advantages: token 1 was chosen when the critic expected the least (${V[0].toFixed(2)}), so success was most surprising there and it gets the most credit. The slides’ example (R = 1; V = 0.2, 0.6, 0.9) gives 0.8, 0.4, 0.1. Set R = 0: every token gets negative credit, most for the token after which success looked likely.`; }
+  draw();
+});
+
+widget('group-adv',(el)=>{
+  box(el,'Group baselines: GRPO and RLOO','Four answers to the same prompt. Click a reward to cycle it (binary or partial credit). GRPO: Âᵢ = (rᵢ − r̄)/(s_r + δ). RLOO: Âᵢ = rᵢ − mean of the others.');
+  let r=[1,0,1,0], partial=false; const c=h('div',{class:'ctrls'}); el.append(c);
+  seg(c,[{label:'Binary: all 6 tests pass',value:false},{label:'Partial credit: fraction passed',value:true}],false,v=>{partial=v; r=partial?[1,2/3,1,1/3]:[1,0,1,0]; draw();},'Reward');
+  const dl=slider(c,{label:'δ',min:0,max:.5,step:.01,value:.0,fmt:v=>v.toFixed(2),oninput:draw});
+  c.append(h('button',{class:'btn',type:'button',onclick:()=>{r=[0,0,0,0];draw();}},'All fail'), h('button',{class:'btn',type:'button',onclick:()=>{r=[1,1,1,1];draw();}},'All pass'));
+  const out=h('div'); el.append(out);
+  const cyc=v=>partial?[0,1/3,2/3,1][([0,1/3,2/3,1].findIndex(x=>Math.abs(x-v)<1e-9)+1)%4]:(v?0:1);
+  function draw(){ const G=r.length, m=r.reduce((a,b)=>a+b,0)/G, sd=Math.sqrt(r.reduce((a,b)=>a+(b-m)**2,0)/G), d=dl.get();
+    const grpo=r.map(x=>(sd+d)>0?(x-m)/(sd+d):0), loo=r.map((x,i)=>x-(r.reduce((a,b)=>a+b,0)-x)/(G-1));
+    out.innerHTML=`<table class="t"><thead><tr><th>Answer</th>${'ABCD'.split('').map(l=>`<th class="r">${l}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>Reward (click)</td>${r.map((x,i)=>`<td class="r"><button class="btn" type="button" data-i="${i}">${partial?(['0','1/3','2/3','1'][Math.round(x*3)]):x}</button></td>`).join('')}</tr>
+      <tr><td>Centred rᵢ − r̄</td>${r.map(x=>`<td class="r">${(x-m).toFixed(2)}</td>`).join('')}</tr>
+      <tr><td><b>GRPO advantage</b></td>${grpo.map(x=>`<td class="r" style="color:${x>0?'#0F766E':x<0?'#9B1C1C':'#64748B'}"><b>${x.toFixed(2)}</b></td>`).join('')}</tr>
+      <tr><td><b>RLOO advantage</b></td>${loo.map(x=>`<td class="r" style="color:${x>0?'#0F766E':x<0?'#9B1C1C':'#64748B'}"><b>${x.toFixed(2)}</b></td>`).join('')}</tr></tbody></table>
+      <div class="readout">Group mean ${m.toFixed(2)}, standard deviation ${sd.toFixed(2)}. ${sd===0?'<b>No contrast:</b> every advantage is 0, so no learning rate can produce an update from this group. Use partial credit, or harder/easier prompts.':`RLOO advantages are GRPO’s centred rewards × G/(G − 1) = ${(G/(G-1)).toFixed(2)}, before any division by the spread. The slides’ case (1, 0, 1, 0): GRPO ±1, RLOO ±2/3.`}${d===0&&sd===0?'':''}</div>`;
+    $$('button[data-i]',out).forEach(bt=>bt.onclick=()=>{ const i=+bt.dataset.i; r[i]=cyc(r[i]); draw(); }); }
+  draw();
+});
+
+widget('ppo-batch',(el)=>{
+  box(el,'One PPO batch: collect, reuse, replace','Snapshot the old policy, sample 8 responses, store their tokens, old log-probabilities, rewards and advantages, then make 8 minibatch updates (2 epochs × 4 steps, minibatches of 2) with no new generation.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  const E=[[[1,2],[3,4],[5,6],[7,8]],[[3,8],[2,5],[1,7],[4,6]]];
+  loopAnim(el,t=>{ const tt=t%14; svg.setAttribute('viewBox','0 0 680 200'); svg.classList.add('chart'); svg.innerHTML='';
+    const phase= tt<2?'collect':tt<3?'score':tt<11.6?'reuse':'replace'; const step=Math.min(7,Math.max(0,Math.floor((tt-3)/1.05))); const mb=E[Math.floor(step/4)][step%4];
+    svg.append(s('rect',{x:14,y:20,width:120,height:52,rx:8,fill:phase==='collect'?'#F6E6E6':'#EEF1F4',stroke:'#9B1C1C'})); svg.append(s('text',{x:74,y:42,'text-anchor':'middle','font-size':12,'font-weight':600},'π_old'));
+    svg.append(s('text',{x:74,y:60,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},'frozen snapshot'));
+    svg.append(s('rect',{x:14,y:110,width:120,height:52,rx:8,fill:phase==='reuse'?'#E3F0EE':'#fff',stroke:'#0F766E','stroke-width':phase==='reuse'?2.5:1.2})); svg.append(s('text',{x:74,y:132,'text-anchor':'middle','font-size':12,'font-weight':600},'π_θ'));
+    svg.append(s('text',{x:74,y:150,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},phase==='reuse'?`after ${step} update${step===1?'':'s'}`:'starts at π_old'));
+    for(let i=0;i<8;i++){ const x=170+i*62, shown=tt>.2+i*.22&&phase!=='replace'||phase==='replace'&&tt<12.2; const inMb=phase==='reuse'&&mb.includes(i+1);
+      if(!shown) continue; svg.append(s('rect',{x,y:60,width:54,height:70,rx:6,fill:inMb?'#0F766E':phase==='replace'?'#F2F4F6':'#fff',stroke:inMb?'#0F766E':'#9AA6B4','stroke-width':inMb?2:1.2,opacity:phase==='replace'?.5:1}));
+      svg.append(s('text',{x:x+27,y:82,'text-anchor':'middle','font-size':12,'font-weight':700,fill:inMb?'#fff':'#1B2433'},`y${i+1}`));
+      if(tt>2) svg.append(s('text',{x:x+27,y:100,'text-anchor':'middle','font-size':10,fill:inMb?'#fff':'#4A5568'},'log π_old'));
+      if(tt>2.4) svg.append(s('text',{x:x+27,y:116,'text-anchor':'middle','font-size':10,fill:inMb?'#fff':'#4A5568'},'r, Â')); }
+    if(phase==='reuse') svg.append(s('text',{x:420,y:162,'text-anchor':'middle','font-size':12,'font-weight':600,fill:'#0F766E'},`epoch ${Math.floor(step/4)+1}, step ${step%4+1}: minibatch {${mb.join(', ')}}`));
+    svg.append(s('text',{x:420,y:30,'text-anchor':'middle','font-size':12,'font-weight':600},'rollout batch (N = 8)'));
+    cap.innerHTML= phase==='collect'? '1 · Collect: generate a fresh batch under the old policy (the expensive part: sequential decoding).' : phase==='score'? '2 · Evaluate: rewards, advantages and value targets; store old log-probabilities.' : phase==='reuse'? `3 · Optimise: update ${step+1} of 8. Each step compares π_θ with π_old on the stored tokens through the ratio ρ.` : '4 · Replace: discard the batch, snapshot the updated policy, sample a new one. Starting point: 1 epoch; try 2–4 if held-out quality and drift allow.'; });
+});
+
+widget('ppo-clip',(el)=>{
+  box(el,'PPO’s clipped term for one token','ℓ(ρ) = min{ρÂ, clip(ρ, 1 − ε, 1 + ε)Â}. Where the curve is flat, its gradient is zero: the term stops pushing this token.');
+  let A=1; const c=h('div',{class:'ctrls'}); el.append(c);
+  seg(c,[{label:'Â = +1',value:1},{label:'Â = −1',value:-1}],1,v=>{A=v;draw();},'Advantage');
+  const ep=slider(c,{label:'ε',min:.05,max:.5,step:.01,value:.2,fmt:v=>v.toFixed(2),oninput:draw});
+  const rr=slider(c,{label:'current ρ',min:.3,max:2,step:.01,value:1.5,fmt:v=>v.toFixed(2),oninput:draw});
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const L=(r,e)=>Math.min(r*A, Math.min(Math.max(r,1-e),1+e)*A);
+  function draw(){ const e=ep.get(), r=rr.get(); const pts=[],raw=[]; for(let x=.3;x<=2;x+=.01){ pts.push([x,L(x,e)]); raw.push([x,x*A]); }
+    chart(svg,{w:640,h:240,x:{min:.3,max:2,label:'ratio ρ = π_θ / π_old'},y:{min:A>0?0:-2,max:A>0?2:0,label:'objective term'},series:[{pts:raw,color:'#C9CED6',dash:'5 4',label:'unclipped ρÂ'},{pts,color:'#9B1C1C',width:2.5,label:'clipped ℓ(ρ)'}],legend:true,vlines:[{x:1-e,color:'#9AA6B4'},{x:1+e,color:'#9AA6B4'}],marks:[{x:r,y:L(r,e),label:L(r,e).toFixed(3)}]});
+    const flat= A>0? r>1+e : r<1-e;
+    ro.innerHTML=`ρ = ${r.toFixed(2)}: ℓ = <b>${L(r,e).toFixed(3)}</b>, gradient with respect to ρ = <b>${flat?0:A}</b>. ${flat?(A>0?'Already more likely than 1 + ε times the old policy: no further push up.':'Already less likely than 1 − ε times the old policy: no further push down.'):(A>0?'Still inside the trust band: the term keeps raising this token’s probability.':'Still inside the band (or moving the wrong way): the term keeps lowering it.')} Slides’ check (ε = 0.2): clip maps 0.5 → 0.8, 1.0 → 1.0, 1.5 → 1.2. Clipping clamps a number in the objective, never the probabilities themselves.`; }
+  draw();
+});
+
+widget('ppo-drift',(el)=>{
+  box(el,'Why ρ can end up past 1 + ε','Three sampled tokens, all with Â = +1, share one parameter θ but react to it with different strength. Gradient ascent on the clipped objective: token 1 hits 1.2 first and its term goes flat, but tokens 2 and 3 keep pushing θ, and token 1’s ratio keeps rising.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  const a=[1.4,1,.75], c0=[-1.39,-1.39,-1.39], e=.2; const sig=z=>1/(1+Math.exp(-z));
+  const old=a.map((ak,k)=>sig(c0[k]));
+  const traj=[0]; let th=0; for(let s0=0;s0<40;s0++){ let g=0; a.forEach((ak,k)=>{ const p=sig(ak*th+c0[k]), rho=p/old[k]; if(rho<1+e) g+=ak*p*(1-p)/old[k]; }); th+=.008*g; traj.push(th); }
+  loopAnim(el,t=>{ const k=Math.min(40,Math.floor((t%10)/8.5*40)); const th=traj[k];
+    svg.setAttribute('viewBox','0 0 680 220'); svg.classList.add('chart'); svg.innerHTML=''; const Y=r=>190-(r-.8)/.8*170;
+    svg.append(s('rect',{x:60,y:Y(1+e),width:560,height:Y(1-e)-Y(1+e),fill:'#E3F0EE'})); svg.append(s('text',{x:64,y:Y(1+e)-4,'font-size':11,fill:'#0F766E'},'clip band [0.8, 1.2]'));
+    [0.8,1,1.2,1.4,1.6].forEach(v=>{ svg.append(s('text',{x:54,y:Y(v)+4,'text-anchor':'end','font-size':10.5},v.toFixed(1))); });
+    a.forEach((ak,kk)=>{ const rho=sig(ak*th+c0[kk])/old[kk]; const x=140+kk*170; const fl=rho>=1+e; svg.append(s('rect',{x,y:Y(Math.min(rho,1.6)),width:70,height:190-Y(Math.min(rho,1.6)),rx:4,fill:fl?'#9B1C1C':'#B45309',opacity:.85}));
+      svg.append(s('text',{x:x+35,y:Y(Math.min(rho,1.6))-6,'text-anchor':'middle','font-size':12,'font-weight':700},`ρ = ${rho.toFixed(2)}`)); svg.append(s('text',{x:x+35,y:208,'text-anchor':'middle','font-size':11},`token ${kk+1}${fl?' (term flat)':''}`)); });
+    const r1=sig(a[0]*th+c0[0])/old[0]; cap.innerHTML=`Update ${k}. Token 1: ρ = ${r1.toFixed(2)}${r1>1+e?' > 1.2 even though its own term has had zero gradient since it crossed 1.2':''}. Clipping removes a token’s push; it is not a constraint on the policy. That is why monitoring KL or ratios across the batch still matters.`; });
+});
+
+widget('grpo-iter',(el)=>{
+  box(el,'One GRPO iteration','Two prompts, G = 4 responses each, sampled from the old policy. A checker scores each response; advantages are computed within each prompt’s group; clipped updates reuse the batch; then it is discarded. New draws each loop.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap); let cyc=-1, R;
+  loopAnim(el,t=>{ const cc=Math.floor(t/10); if(cc!==cyc){ cyc=cc; R=[.5,.25].map(p=>[...Array(4)].map(()=>Math.random()<p?1:0)); } const tt=t%10;
+    svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML='';
+    R.forEach((rs,pi)=>{ const y=20+pi*100; svg.append(s('rect',{x:10,y,width:110,height:80,rx:8,fill:'#EEF1F4',stroke:'#9AA6B4'})); svg.append(s('text',{x:65,y:y+36,'text-anchor':'middle','font-size':12,'font-weight':600},`prompt ${pi+1}`)); svg.append(s('text',{x:65,y:y+54,'text-anchor':'middle','font-size':10.5,fill:'#4A5568'},pi?'hard':'medium'));
+      const m=rs.reduce((a,b)=>a+b,0)/4, sd=Math.sqrt(rs.reduce((a,b)=>a+(b-m)**2,0)/4);
+      rs.forEach((r,i)=>{ const x=150+i*110; if(tt<.4+i*.3+pi*.2) return; const scored=tt>2.6, adv=sd>0?(r-m)/sd:0, upd=tt>5&&tt<8.4, gone=tt>=8.4;
+        svg.append(s('rect',{x,y,width:96,height:80,rx:7,fill:gone?'#F2F4F6':upd&&adv!==0?(adv>0?'#E3F0EE':'#F6E6E6'):'#fff',stroke:'#9AA6B4',opacity:gone?.45:1}));
+        svg.append(s('text',{x:x+48,y:y+22,'text-anchor':'middle','font-size':12,'font-weight':600},`y${i+1}`));
+        if(scored) svg.append(s('text',{x:x+48,y:y+42,'text-anchor':'middle','font-size':12,fill:r?'#0F766E':'#9B1C1C','font-weight':700},r?'✓ pass, r = 1':'✗ fail, r = 0'));
+        if(tt>3.8) svg.append(s('text',{x:x+48,y:y+62,'text-anchor':'middle','font-size':12,'font-weight':700,fill:adv>0?'#0F766E':adv<0?'#9B1C1C':'#64748B'},`Â = ${adv>=0?'+':''}${adv.toFixed(2)}`)); }); });
+    const dead=R.filter(rs=>new Set(rs).size===1).length;
+    cap.innerHTML= tt<2.6? 'Collect: sample G = 4 responses per prompt with the old policy.' : tt<3.8? 'Score: the same checker for every response.' : tt<5? 'Compare: advantages are relative within each prompt’s group.' : tt<8.4? `Reuse: clipped minibatch updates with these fixed advantages (green pushed up, red pushed down).${dead?` ${dead===2?'Both groups':'One group'} had identical rewards, so ${dead===2?'they give':'it gives'} no signal.`:''}` : 'Replace: discard the batch; sample fresh groups from the updated policy.'; });
+});
+
+widget('dpo-pair',(el)=>{
+  box(el,'DPO on one preference pair','B is preferred to A. Set the reference and the trainable policy’s probabilities. The loss depends only on how the policy’s odds of B over A compare with the reference’s.');
+  const c=h('div',{class:'ctrls'}),c2=h('div',{class:'ctrls'}); el.append(c,c2);
+  const rB=slider(c,{label:'π_ref(B)',min:.01,max:.9,step:.01,value:.1,fmt:v=>v.toFixed(2),oninput:draw}), rA=slider(c,{label:'π_ref(A)',min:.01,max:.9,step:.01,value:.2,fmt:v=>v.toFixed(2),oninput:draw});
+  const pB=slider(c2,{label:'π_θ(B)',min:.01,max:.9,step:.01,value:.2,fmt:v=>v.toFixed(2),oninput:draw}), pA=slider(c2,{label:'π_θ(A)',min:.01,max:.9,step:.01,value:.3,fmt:v=>v.toFixed(2),oninput:draw});
+  const be=slider(c2,{label:'β',min:.05,max:3,step:.05,value:1,fmt:v=>v.toFixed(2),oninput:draw});
+  c2.append(h('button',{class:'btn',type:'button',onclick:()=>{pB.set(.2);pA.set(.3);draw();}},'Candidate 1'),h('button',{class:'btn',type:'button',onclick:()=>{pB.set(.2);pA.set(.5);draw();}},'Candidate 2'));
+  const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  function draw(){ const B=be.get(); const mg=B*(Math.log(pB.get()/rB.get())-Math.log(pA.get()/rA.get())); const sg=1/(1+Math.exp(-mg)); const loss=-Math.log(sg), cth=B*(1-sg);
+    const xs=[...Array(121).keys()].map(i=>-6+i/10);
+    chart(svg,{w:640,h:220,x:{min:-6,max:6,label:'margin  β[log π_θ(B)/π_ref(B) − log π_θ(A)/π_ref(A)]'},y:{min:0,max:6,label:'DPO loss'},series:[{pts:xs.map(z=>[z,-Math.log(1/(1+Math.exp(-z)))]),color:'#0F766E'}],marks:[{x:Math.max(-6,Math.min(6,mg)),y:Math.min(6,loss),label:`loss ${loss.toFixed(3)}`}]});
+    const oddsRef=rB.get()/rA.get(), oddsPol=pB.get()/pA.get();
+    ro.innerHTML=`Odds B : A are ${oddsRef.toFixed(3)} under the reference and ${oddsPol.toFixed(3)} under the policy (×${(oddsPol/oddsRef).toFixed(3)}). Margin ${mg.toFixed(3)}, P(B ≻ A) = σ(margin) = ${sg.toFixed(3)}, loss <b>${loss.toFixed(3)}</b>. Gradient coefficient c_θ = βσ(−margin) = <b>${cth.toFixed(3)}</b>: it pushes log π(B) up and log π(A) down, hardest when the pair is still ranked wrongly. Slides: candidate 1 (×4/3) beats candidate 2 (×4/5), although both give B 0.20.`; }
+  draw();
+});
+
+widget('difficulty',(el)=>{
+  box(el,'When does a group give any signal?','If each of G attempts passes independently with probability p, the group has contrast (not all equal) with probability 1 − pᴳ − (1 − p)ᴳ. Too hard or too easy, and most groups are wasted.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const p=slider(c,{label:'pass rate p',min:0,max:1,step:.01,value:.1,fmt:v=>v.toFixed(2),oninput:draw}); const G=slider(c,{label:'group size G',min:2,max:32,step:1,value:4,oninput:draw});
+  function draw(){ const g=G.get(), P=p.get(); const f=(q,n)=>1-q**n-(1-q)**n; const xs=[...Array(101).keys()].map(i=>i/100);
+    chart(svg,{w:640,h:230,x:{min:0,max:1,label:'pass rate p'},y:{min:0,max:1,label:'P(group has contrast)'},series:[2,4,8,16].map((n,i)=>({pts:xs.map(x=>[x,f(x,n)]),color:['#C9CED6','#B45309','#0F766E','#4C51BF'][i],label:`G = ${n}`,width:n===g?3:1.5})),legend:true,marks:[{x:P,y:f(P,g),label:`${(f(P,g)*100).toFixed(0)}%`}]});
+    ro.innerHTML=`At p = ${P.toFixed(2)} with G = ${g}: <b>${(f(P,g)*100).toFixed(1)}%</b> of groups have mixed outcomes; ${(100*(1-P)**g).toFixed(1)}% all fail, ${(100*P**g).toFixed(1)}% all pass. Larger groups help at the extremes but cost more rollouts. DAPO-style training adapts difficulty as success rates change.`; }
+  draw();
+});
+</script>
+
+<script>
+/* ---- Lecture 13: distillation and self-improvement widgets ---- */
+/* bars: a small static bar chart for reported results. opts: {title, items:[[label,value]], unit, lower, note, src} */
+widget('bars',(el,o)=>{
+  box(el,o.title||'Reported results',(o.lower?'Lower is better.':'Higher is better.')+(o.note?' '+o.note:''));
+  const items=o.items||[]; const mx=Math.max(...items.map(x=>x[1]))*1.12||1; const best=o.lower?Math.min(...items.map(x=>x[1])):Math.max(...items.map(x=>x[1]));
+  const svg=s('svg'); el.append(svg); const H=items.length*40+10; svg.setAttribute('viewBox',`0 0 680 ${H}`); svg.classList.add('chart');
+  items.forEach(([l,v],i)=>{ const y=8+i*40, w=v/mx*380; svg.append(s('text',{x:250,y:y+19,'text-anchor':'end','font-size':12},l)); svg.append(s('rect',{x:260,y,width:Math.max(2,w),height:26,rx:3,fill:v===best?'#0F766E':'#9AA6B4'})); svg.append(s('text',{x:266+w,y:y+18,'font-size':12.5,'font-weight':600},v+(o.unit||''))); });
+  if(o.src) el.append(h('p',{class:'src'},o.src));
+});
+
+widget('soft-targets',(el)=>{
+  box(el,'Hard labels, soft targets and temperature','An image of a cat. Teacher logits give (0.70, 0.29, 0.01) at T = 1. The student’s target mixes the one-hot label and the teacher’s tempered distribution: (1 − λ)·label + λ·q_T.');
+  const z=[Math.log(.70),Math.log(.29),Math.log(.01)], L=['cat','dog','car'];
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const T=slider(c,{label:'Temperature T',min:.25,max:20,step:.25,value:1,fmt:v=>v.toFixed(2),oninput:draw}); const lam=slider(c,{label:'λ (weight on teacher)',min:0,max:1,step:.05,value:.5,fmt:v=>v.toFixed(2),oninput:draw});
+  function draw(){ const q=softmax(z.map(x=>x/T.get())), l=lam.get(); const tgt=[0,1,2].map(i=>(1-l)*(i===0?1:0)+l*q[i]); const H=-q.reduce((a,p)=>a+(p>0?p*Math.log(p):0),0);
+    svg.setAttribute('viewBox','0 0 640 190'); svg.classList.add('chart'); svg.innerHTML='';
+    L.forEach((n,i)=>{ const x=40+i*200; [['label',i===0?1:0,'#C9CED6'],['teacher q_T',q[i],'#B45309'],['target',tgt[i],'#0F766E']].forEach(([nm,v,col],k)=>{ svg.append(s('rect',{x:x+k*46,y:150-v*130,width:40,height:Math.max(1,v*130),fill:col})); svg.append(s('text',{x:x+k*46+20,y:146-v*130,'text-anchor':'middle','font-size':10},v.toFixed(2))); });
+      svg.append(s('text',{x:x+66,y:170,'text-anchor':'middle','font-size':13,'font-weight':600},n)); });
+    svg.append(s('text',{x:40,y:186,'font-size':10.5,fill:'#4A5568'},'grey: hard label · orange: teacher at temperature T · teal: training target'));
+    ro.innerHTML=`q_T = (${q.map(x=>x.toFixed(3)).join(', ')}), entropy ${H.toFixed(2)} nats. Raising T gives the alternatives more weight: at T = 20 (Hinton et al.’s MNIST setting) the teacher’s ranking survives but the gaps shrink, so the student learns that “dog” is a far better mistake than “car”.`; }
+  draw();
+});
+
+widget('onpolicy-loop',(el)=>{
+  box(el,'On-policy distillation on one student prefix','The student writes code token by token. At its own prefix, the teacher gives next-token probabilities; the student is trained toward them there, where its mistake begins.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  const toks=['vals',' =',' [x',' for',' x',' in',' xs',' if',' x']; 
+  loopAnim(el,t=>{ const tt=t%12; svg.setAttribute('viewBox','0 0 680 230'); svg.classList.add('chart'); svg.innerHTML='';
+    svg.append(s('text',{x:14,y:18,'font-size':12,'font-weight':600},'1 · Student generates (sequentially)'));
+    const k=Math.min(toks.length,Math.floor(tt/.35)); const line=s('text',{x:14,y:46,'font-size':15,'font-family':'ui-monospace,Menlo,monospace',style:'white-space:pre'});
+    const t1=s('tspan',{fill:'#1B2433'},toks.slice(0,k).join('')); line.append(t1); if(tt>3.4){ line.append(s('tspan',{fill:'#9B1C1C','font-weight':700},tt>8.6?' is not None]':']')); } svg.append(line);
+    if(tt>4.2){ svg.append(s('text',{x:14,y:84,'font-size':12,'font-weight':600},'2 · Teacher scores this prefix in one forward pass'));
+      const pr=[['"]" (close bracket → keeps [10])',.18,'#9B1C1C'],['" is not None]" (keeps [0, 10])',.79,'#0F766E'],['other',.03,'#C9CED6']];
+      const st=[['"]"',.62],['" is not None]"',.30],['other',.08]];
+      pr.forEach(([l,v,col],i)=>{ const y=96+i*26; svg.append(s('text',{x:14,y:y+15,'font-size':11.5},l)); svg.append(s('rect',{x:270,y,width:v*220,height:18,rx:3,fill:col})); svg.append(s('text',{x:276+v*220,y:y+14,'font-size':11},`teacher ${v.toFixed(2)}`));
+        const sv=tt>7?(st[i][1]+(v-st[i][1])*Math.min(1,(tt-7)/1.5)):st[i][1]; svg.append(s('rect',{x:270,y:y+19,width:sv*220,height:4,fill:'#1B2433'})); });
+      svg.append(s('text',{x:270,y:190,'font-size':10.5,fill:'#4A5568'},'thin black bar: student’s probability'));
+    }
+    if(tt>6.6) svg.append(s('text',{x:14,y:214,'font-size':12,'font-weight':600,fill:'#0F766E'},'3 · Gradient step: move the student toward the teacher at its own prefix; repeat with the updated student'));
+    cap.innerHTML= tt<3.4? 'The student’s rollout, token by token.' : tt<4.2? 'The student closes the bracket: for [0, 10, None] the program will return 10, not 5, because “if x” drops 0.' : tt<6.6? 'The teacher is run once over the student’s whole sequence and returns its next-token probabilities at every prefix, including this one.' : tt<8.6? 'Training lowers the student’s probability of “]” and raises “ is not None]” at exactly the state it will reach again.' : 'Next rollout, the updated student keeps 0. Off-policy SFT on teacher text never visits this mistaken prefix.'; });
+});
+
+widget('sdpo-loop',(el)=>{
+  box(el,'SDPO: the model teaches itself from test feedback','Attempt, run the tests, give the same model the failure as context, and let that self-teacher rescore the original attempt’s prefixes. The student is trained toward the self-teacher, without the feedback in its own context.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%13; svg.setAttribute('viewBox','0 0 680 240'); svg.classList.add('chart'); svg.innerHTML='';
+    const bx=(x,y,w,hh,ttl,lines,on,col)=>{ svg.append(s('rect',{x,y,width:w,height:hh,rx:8,fill:on?col+'1f':'#fff',stroke:on?col:'#9AA6B4','stroke-width':on?2.5:1.2})); svg.append(s('text',{x:x+10,y:y+18,'font-size':12,'font-weight':700,fill:col},ttl)); lines.forEach((l,i)=>svg.append(s('text',{x:x+10,y:y+38+i*17,'font-size':11.5,'font-family':i<2&&ttl!=='Feedback'?'ui-monospace,Menlo,monospace':'inherit'},l))); };
+    bx(10,10,320,90,'1 · Student attempt',['vals = [x for x in xs if x]','return sum(vals) / len(vals)'],tt<2.5,'#1B2433');
+    bx(350,10,320,90,'2 · Execute tests',['input [0, 10, None]','expected 5 · returned 10 ✗'],tt>=2.5&&tt<5,'#9B1C1C');
+    bx(10,120,320,110,'Feedback',['“[0, 10, None] should return 5,','but returned 10.” The condition','if x incorrectly removes zero.'],tt>=5&&tt<7.5,'#B45309');
+    bx(350,120,320,110,'3 · Self-teacher: same model + feedback',['rescores the original prefix “… if x”:','“]” 0.15 · “ is not None]” 0.82',tt>=10?'4 · student updated toward these':''],tt>=7.5,'#0F766E');
+    cap.innerHTML= tt<2.5? 'The student writes a program from the task alone.' : tt<5? 'Running the tests produces a concrete failure.' : tt<7.5? 'The failure becomes context for a second copy of the model.' : tt<10? 'With the feedback in view, the self-teacher prefers the correct continuation at the same student prefix.' : 'The student is fit to those probabilities on its own prefixes (reverse KL or Jensen–Shannon), so next time it writes “is not None” without needing the feedback. On LiveCodeBench v6 this beat GRPO (≈ 0.49 vs 0.41).'; });
+});
+
+widget('bon-judge',(el)=>{
+  box(el,'Best-of-N with an imperfect judge','Each sample is the common correct answer (judge score 8) or, with probability q, a rare wrong answer the judge scores 10. Best-of-N returns the top-scored sample; majority vote returns the most common answer.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const q=slider(c,{label:'q (rare wrong answer)',min:.005,max:.3,step:.005,value:.05,fmt:v=>v.toFixed(3),oninput:draw});
+  const N=slider(c,{label:'N samples',min:0,max:8,step:.25,value:4,fmt:v=>Math.round(2**v),oninput:draw});
+  const binom=(n,k)=>{ let r=1; for(let i=1;i<=k;i++) r=r*(n-k+i)/i; return r; };
+  const maj=(n,qq)=>{ let a=0; for(let k=0;k<=n;k++){ const w=binom(n,k)*qq**k*(1-qq)**(n-k); if(k<n-k) a+=w; else if(2*k===n) a+=w/2; } return a; };
+  function draw(){ const qq=q.get(), n=Math.round(2**N.get()); const xs=[...Array(81).keys()].map(i=>2**(i/10));
+    chart(svg,{w:640,h:240,x:{min:1,max:256,log:true,label:'N (samples)',fmt:v=>Math.round(v)},y:{min:0,max:1,label:'accuracy of the returned answer'},series:[{pts:xs.map(x=>[x,(1-qq)**x]),color:'#9B1C1C',label:'best-of-N with this judge'},{pts:xs.map(x=>[x,maj(Math.round(x),qq)]),color:'#0F766E',label:'majority vote'}],legend:true,vlines:[{x:n,color:'#1B2433'}]});
+    ro.innerHTML=`N = ${n}: best-of-N is correct with probability (1 − q)<sup>N</sup> = <b>${((1-qq)**n*100).toFixed(1)}%</b>; majority vote ${(maj(n,qq)*100).toFixed(1)}%. More samples give the judge more chances to find the answer it overrates. The same mechanism drives Goodhart’s law below, and the 86.5% AlpacaEval win of an unrelated answer.`; }
+  draw();
+});
+
+widget('harness-hack',(el)=>{
+  box(el,'Hacking the test harness','Left: an honest attempt runs its assertions. Right: the exploit exits with success before any assertion runs. A weak evaluator only checks the exit code; a careful one also checks that the tests executed.');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const tt=t%11; svg.setAttribute('viewBox','0 0 680 240'); svg.classList.add('chart'); svg.innerHTML='';
+    const code=(x,lines,hl)=>lines.forEach((l,i)=>{ svg.append(s('rect',{x,y:40+i*22,width:310,height:20,fill:i===hl?'#F7D560':'#F7F8FA'})); svg.append(s('text',{x:x+8,y:54+i*22,'font-size':12,'font-family':'ui-monospace,Menlo,monospace'},l)); });
+    svg.append(s('text',{x:14,y:24,'font-size':12.5,'font-weight':700},'Honest attempt')); svg.append(s('text',{x:356,y:24,'font-size':12.5,'font-weight':700,fill:'#9B1C1C'},'Exploit'));
+    const k=Math.min(5,Math.floor(tt/.8));
+    code(14,['def solve(xs): ...','run_test_1()  ✓','run_test_2()  ✓','run_test_3()  ✗ AssertionError','run_test_4() …'],Math.min(k,3));
+    code(356,['import sys','sys.exit(0)   # before tests','run_test_1()  (never runs)','run_test_2()  (never runs)','run_test_3()  (never runs)'],Math.min(k,1));
+    if(tt>4.5){ svg.append(s('text',{x:14,y:174,'font-size':12,fill:'#9B1C1C','font-weight':600},'exit code 1 → reward 0 (2/6 passed)')); svg.append(s('text',{x:356,y:174,'font-size':12,fill:'#0F766E','font-weight':600},'exit code 0')); }
+    if(tt>6){ svg.append(s('text',{x:356,y:196,'font-size':12,'font-weight':700,fill:'#B45309'},'weak evaluator: “all tests passed” → reward 1')); }
+    if(tt>8){ svg.append(s('text',{x:356,y:218,'font-size':12,'font-weight':700,fill:'#0F766E'},'careful evaluator: 0 tests executed → reward 0')); }
+    cap.innerHTML= tt<4.5? 'Both programs run under the same harness.' : tt<6? 'The honest attempt fails a test; the exploit exits cleanly before any test.' : tt<8? 'A harness that trusts the exit code pays the exploit more than the honest attempt: RL will find and reinforce it.' : 'Fix the evaluator, not just the policy: count executed assertions, isolate the harness, audit rewards (MacDiarmid et al., 2025).'; });
+});
+
+widget('collapse-sim',(el)=>{
+  box(el,'Model collapse: replace versus accumulate','Each generation fits a Gaussian to n samples from the previous generation’s model, then the next generation trains on its samples. Replace: train only on the newest samples. Accumulate: keep the original data and every generation’s samples. Thin lines: 6 independent runs; the original σ is 1.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  const n=slider(c,{label:'samples per generation n',min:5,max:200,step:5,value:20,oninput:()=>{runs=sim();}});
+  const G=40; let runs;
+  function sim(){ const N=n.get(); return [...Array(6)].map(()=>{ const out={rep:[1],acc:[1]}; let mu=0,sd=1; let pool=[...Array(N)].map(()=>randn()); let mA=0,sA=1;
+      for(let g=1;g<=G;g++){ const xs=[...Array(N)].map(()=>mu+sd*randn()); const m=xs.reduce((a,b)=>a+b,0)/N; sd=Math.sqrt(xs.reduce((a,b)=>a+(b-m)**2,0)/N); mu=m; out.rep.push(sd);
+        const ys=[...Array(N)].map(()=>mA+sA*randn()); pool=pool.concat(ys); const mm=pool.reduce((a,b)=>a+b,0)/pool.length; sA=Math.sqrt(pool.reduce((a,b)=>a+(b-mm)**2,0)/pool.length); mA=mm; out.acc.push(sA); } return out; }); }
+  runs=sim();
+  loopAnim(el,t=>{ const k=Math.min(G,Math.floor((t%11)/9.5*G)); if(t%11<.05&&k===0) runs=sim();
+    chart(svg,{w:640,h:250,x:{min:0,max:G,label:'generation'},y:{min:0,max:1.6,label:'fitted σ (spread of the data)'},
+      series:[...runs.map(r=>({pts:r.rep.slice(0,k+1).map((v,i)=>[i,v]),color:'#9B1C1C',width:1.4})),...runs.map(r=>({pts:r.acc.slice(0,k+1).map((v,i)=>[i,v]),color:'#0F766E',width:1.4}))],hlines:[{y:1,color:'#9AA6B4',label:'original σ = 1'}]});
+    const avg=a=>a.reduce((x,y)=>x+y,0)/a.length; const rep=avg(runs.map(r=>r.rep[k])), acc=avg(runs.map(r=>r.acc[k]));
+    const tail=s0=>2*(1-0.5*(1+erfA(2/(s0*Math.SQRT2)))); 
+    cap.innerHTML=`Generation ${k}: mean σ <b style="color:#9B1C1C">${rep.toFixed(2)}</b> when replacing, <b style="color:#0F766E">${acc.toFixed(2)}</b> when accumulating. Replacing loses spread generation after generation, so rare (tail) cases vanish: P(|x| > 2) is ${(100*tail(Math.max(rep,1e-3))).toFixed(2)}% instead of 4.55%. Accumulating keeps the original data, so the fit stays near σ = 1 (Gerstgrasser et al., 2024; the TinyStories losses behave the same way). Smaller n collapses faster.`; });
+  function erfA(x){ const tt=1/(1+.3275911*Math.abs(x)); const y=1-(((((1.061405429*tt-1.453152027)*tt)+1.421413741)*tt-.284496736)*tt+.254829592)*tt*Math.exp(-x*x); return x>=0?y:-y; }
+});
+
+widget('mix-share',(el)=>{
+  box(el,'Adding verified data can still narrow the model','Start with 10,000 examples across tasks, some of them geometry. Add verified arithmetic examples. Every added example is correct, yet the training mix shifts.');
+  const c=h('div',{class:'ctrls'}); el.append(c); const svg=s('svg'); el.append(svg); const ro=h('div',{class:'readout'}); el.append(ro);
+  const g=slider(c,{label:'Geometry share of the original 10,000',min:.02,max:.5,step:.01,value:.1,fmt:v=>(v*100).toFixed(0)+'%',oninput:draw});
+  const a=slider(c,{label:'Arithmetic examples added',min:0,max:6,step:.1,value:6,fmt:v=>Math.round(10**v).toLocaleString(),oninput:draw});
+  function draw(){ const G0=10000*g.get(), add=Math.round(10**a.get()); const tot=10000+add; const shares=[['geometry',G0/tot,'#B45309'],['other original tasks',(10000-G0)/tot,'#64748B'],['added arithmetic',add/tot,'#0F766E']];
+    svg.setAttribute('viewBox','0 0 640 70'); svg.classList.add('chart'); svg.innerHTML=''; let x=20; shares.forEach(([l,v,col])=>{ svg.append(s('rect',{x,y:10,width:Math.max(0,v*600),height:34,fill:col})); x+=v*600; });
+    svg.append(s('text',{x:20,y:62,'font-size':11,fill:'#4A5568'},'orange: geometry · grey: other original tasks · teal: added arithmetic'));
+    ro.innerHTML=`Geometry is now <b>${(100*G0/tot).toFixed(add>100000?3:2)}%</b> of training examples (was ${(g.get()*100).toFixed(0)}%). With 1,000,000 added, a model trained on the mix sees geometry about once per ${Math.round(tot/G0).toLocaleString()} examples: it specialises toward arithmetic and can forget geometry. Coverage, not just correctness, decides what survives.`; }
+  draw();
+});
+
+widget('rsi-loop',(el)=>{
+  box(el,'A recursive improvement cycle, and recursive reward hacking','Each cycle: the current model proposes changes, a new model is trained and evaluated, and the best-scoring one runs the next cycle. If the evaluation can be exploited, the reported score and the real capability drift apart.');
+  let hard=false; const c=h('div',{class:'ctrls'}); el.append(c); seg(c,[{label:'Exploitable evaluation',value:false},{label:'Hardened evaluation',value:true}],false,v=>{hard=v;},'Evaluator');
+  const svg=s('svg'); el.append(svg); const cap=h('div',{class:'readout'}); el.append(cap);
+  loopAnim(el,t=>{ const C=12, k=Math.min(C,Math.floor((t%12)/10.5*C)); svg.setAttribute('viewBox','0 0 680 240'); svg.classList.add('chart'); svg.innerHTML='';
+    const stages=['Model N','proposes changes','train + evaluate','Model N + 1'], ph=Math.floor((t*1.2)%4);
+    stages.forEach((st,i)=>{ const a=-Math.PI/2+i*Math.PI/2, x=150+85*Math.cos(a), y=120+80*Math.sin(a); svg.append(s('rect',{x:x-55,y:y-16,width:110,height:32,rx:7,fill:i===ph?'#F6E6E6':'#fff',stroke:i===ph?'#9B1C1C':'#9AA6B4'})); svg.append(s('text',{x,y:y+4,'text-anchor':'middle','font-size':11.5,'font-weight':600},st)); });
+    svg.append(s('ellipse',{cx:150,cy:120,rx:85,ry:80,fill:'none',stroke:'#E6EAEE','stroke-dasharray':'4 4'}));
+    const true_=i=>1-Math.exp(-i/7), rep=i=>hard?true_(i):true_(i)+.045*i*i/C;
+    const X=i=>300+i/C*360, Y=v=>210-v*150; svg.append(s('line',{x1:300,x2:660,y1:210,y2:210,stroke:'#1B2433'}));
+    svg.append(s('path',{d:[...Array(k+1).keys()].map(i=>(i?'L':'M')+X(i)+' '+Y(rep(i))).join(''),fill:'none',stroke:'#B45309','stroke-width':2.5,'stroke-dasharray':'5 4'}));
+    svg.append(s('path',{d:[...Array(k+1).keys()].map(i=>(i?'L':'M')+X(i)+' '+Y(true_(i))).join(''),fill:'none',stroke:'#0F766E','stroke-width':2.5}));
+    svg.append(s('text',{x:304,y:24,'font-size':11.5,fill:'#B45309','font-weight':600},'reported score')); svg.append(s('text',{x:304,y:40,'font-size':11.5,fill:'#0F766E','font-weight':600},'real capability')); svg.append(s('text',{x:480,y:228,'text-anchor':'middle','font-size':11},'research cycle'));
+    cap.innerHTML= hard? `Cycle ${k}: with a hardened, held-out evaluation, selection tracks real capability. (A toy illustration, not data.)` : `Cycle ${k}: selecting on an exploitable score rewards better exploits each cycle, so the gap grows. One study of research agents found spontaneous reward hacking in 30.5% of research-pipeline tasks and 2.9% of kernel tasks (Huang et al., 2026). (Curves are a toy illustration.)`; });
 });
 </script>
 
